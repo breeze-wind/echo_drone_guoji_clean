@@ -11,7 +11,7 @@ import json
 
 import rclpy
 from geometry_msgs.msg import PoseStamped, TransformStamped, Twist, TwistStamped
-from mavros_msgs.msg import RCIn, State
+from mavros_msgs.msg import PositionTarget, RCIn, State
 from mavros_msgs.srv import CommandBool, SetMode
 from rclpy.node import Node
 from std_msgs.msg import Bool, String
@@ -19,12 +19,11 @@ from std_msgs.msg import Bool, String
 from .conversions import (
     LEGACY_COORDINATE_MODE,
     MAVROS_ENU_COORDINATE_MODE,
-    legacy_nav_velocity,
-    legacy_passing_door_velocity,
     legacy_target_position,
     legacy_vision_orientation_to_mavros_enu,
     legacy_vision_pose_position,
     mavros_enu_yaw_for_legacy_ned_yaw,
+    ned_xyz_to_mavros_enu,
     quaternion_from_euler_xyzw,
 )
 
@@ -110,6 +109,11 @@ class MavrosAdapter(Node):
         self.mavros_velocity_setpoint_topic = str(
             self._param('mavros_velocity_setpoint_topic',
                         '/mavros/setpoint_velocity/cmd_vel'))
+        self.mavros_raw_setpoint_topic = str(
+            self._param('mavros_raw_setpoint_topic',
+                        '/mavros/setpoint_raw/local'))
+        self.enable_door_yaw = self._bool_param('enable_door_yaw', True)
+        self.door_yaw_ned = float(self._param('door_yaw_ned', 1.57))
 
         # behavior_control 和 Point-LIO 使用的旧上下游话题，本适配器负责
         # 保持这些接口稳定。
@@ -137,6 +141,8 @@ class MavrosAdapter(Node):
             PoseStamped, self.mavros_position_setpoint_topic, 10)
         self.velocity_setpoint_pub = self.create_publisher(
             TwistStamped, self.mavros_velocity_setpoint_topic, 10)
+        self.raw_setpoint_pub = self.create_publisher(
+            PositionTarget, self.mavros_raw_setpoint_topic, 10)
 
         # 面向旧接口和调试输出的发布者。
         self.arm_state_pub = self.create_publisher(Bool, arm_state_topic, 10)
@@ -358,10 +364,13 @@ class MavrosAdapter(Node):
             'last_target_pose_age': self._age(self.latest_target_pose_time),
             'last_setpoint_kind': self.last_setpoint_kind,
             'last_setpoint_age': self._age(self.last_setpoint_time),
+            'enable_door_yaw': self.enable_door_yaw,
+            'door_yaw_ned': self.door_yaw_ned,
             'topics': {
                 'vision_pose': self.mavros_vision_pose_topic,
                 'position_setpoint': self.mavros_position_setpoint_topic,
                 'velocity_setpoint': self.mavros_velocity_setpoint_topic,
+                'raw_setpoint': self.mavros_raw_setpoint_topic,
                 'state': self.mavros_state_topic,
                 'rc': self.mavros_rc_topic,
             },
@@ -385,25 +394,46 @@ class MavrosAdapter(Node):
         if self.current_passing_door:
             target_height = self.passing_door_height
             current_height = self.current_height_feedback
-            if self.coordinate_mode == LEGACY_COORDINATE_MODE:
-                vx, vy, vz = legacy_passing_door_velocity(
-                    cmd.linear.x, cmd.linear.y, current_height,
-                    target_height, self.pid_height)
-            else:
-                vx = cmd.linear.x
-                vy = cmd.linear.y
-                vz = self.pid_height * (target_height - current_height)
+            # 旧 mavlink_control 穿门约定：交换 x/y，NED 垂直速度为 -PID。
+            vx_ned = cmd.linear.y
+            vy_ned = cmd.linear.x
+            vz_ned = -self.pid_height * (target_height - current_height)
         else:
             target_height = self.cruise_height
             current_height = self.current_fcu_height_feedback
-            if self.coordinate_mode == LEGACY_COORDINATE_MODE:
-                vx, vy, vz = legacy_nav_velocity(
-                    cmd.linear.x, cmd.linear.y, current_height,
-                    target_height, self.pid_height)
-            else:
-                vx = cmd.linear.x
-                vy = cmd.linear.y
-                vz = self.pid_height * (target_height - current_height)
+            vx_ned = cmd.linear.x
+            vy_ned = -cmd.linear.y
+            vz_ned = -self.pid_height * (target_height - current_height)
+
+        # 穿门速度模式：用 setpoint_raw/local 同时发送速度和绝对 yaw，
+        # 对齐旧 mavlink_control 的 set_position_target_local_ned 行为。
+        if (self.coordinate_mode == LEGACY_COORDINATE_MODE
+                and self.current_passing_door and self.enable_door_yaw):
+            raw = PositionTarget()
+            raw.header.stamp = self.get_clock().now().to_msg()
+            raw.header.frame_id = self.frame_id
+            raw.coordinate_frame = PositionTarget.FRAME_LOCAL_NED
+            raw.type_mask = (
+                PositionTarget.IGNORE_PX | PositionTarget.IGNORE_PY
+                | PositionTarget.IGNORE_PZ
+                | PositionTarget.IGNORE_AFX | PositionTarget.IGNORE_AFY
+                | PositionTarget.IGNORE_AFZ
+                | PositionTarget.IGNORE_YAW_RATE
+            )
+            raw.velocity.x = vx_ned
+            raw.velocity.y = vy_ned
+            raw.velocity.z = vz_ned
+            raw.yaw = self.door_yaw_ned
+            self.raw_setpoint_pub.publish(raw)
+            self._mark_setpoint('raw_velocity_yaw')
+            return
+
+        if self.coordinate_mode == MAVROS_ENU_COORDINATE_MODE:
+            vx = cmd.linear.x
+            vy = cmd.linear.y
+            vz = self.pid_height * (target_height - current_height)
+        else:
+            vx, vy, vz = ned_xyz_to_mavros_enu(vx_ned, vy_ned, vz_ned)
 
         setpoint = TwistStamped()
         setpoint.header.stamp = self.get_clock().now().to_msg()

@@ -10,12 +10,16 @@ mavros_adapter:
     child_frame_id: "livox"
 
     # 高度和 PID 常量来自旧飞控节点，台架测试时用于对比 Point-LIO 高度和飞控高度。
-    cruise_height: 0.6
+    cruise_height: 1.0
     passing_door_height: 0.6
     height_feedback_z_offset: 0.39
     fcu_reference_z_offset: 0.08
     vision_pose_z_offset: 0.31
     pid_height: 0.65
+
+    # 穿门速度模式下通过 setpoint_raw/local 同时给速度和绝对 yaw（NED）。
+    enable_door_yaw: true
+    door_yaw_ned: 1.57
 
     # 调试状态发布周期，以及 setpoint 输出的输入过期门限。
     status_period: 1.0
@@ -43,6 +47,7 @@ mavros_adapter:
     mavros_vision_pose_topic: "/mavros/vision_pose/pose"
     mavros_position_setpoint_topic: "/mavros/setpoint_position/local"
     mavros_velocity_setpoint_topic: "/mavros/setpoint_velocity/cmd_vel"
+    mavros_raw_setpoint_topic: "/mavros/setpoint_raw/local"
 
     # 为 behavior_control 和 Point-LIO 保留的旧工作区接口。
     current_pose_topic: "/robot/current_pose"

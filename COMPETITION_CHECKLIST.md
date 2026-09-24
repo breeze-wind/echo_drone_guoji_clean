@@ -26,6 +26,9 @@
 - [ ] Nav2 lifecycle active，local/global costmap 有数据，TEB 正常加载。
 - [ ] RViz 中 `/cloud_obstacle` 与真实障碍位置一致，无 90° 旋转/高度错位。
 - [ ] `/servo/status` 正常，投放机构空载或断开。
+- [ ] 穿门速度模式检查：`ros2 topic hz /mavros/setpoint_raw/local` 有输出，
+      `door_yaw_ned=1.57`、`enable_door_yaw=true`；确认 MAVROS `setpoint_raw` 插件已加载。
+- [ ] `mavros_adapter.yaml` 的 `cruise_height` 与 behavior 的 `cruise_height` 一致（当前均为 1.0）。
 
 ## 2. 高度与坐标
 

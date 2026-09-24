@@ -179,6 +179,9 @@ D435 / USB 相机 ──► /robot/image_location, /robot/usb_camera ──► b
 - MID-360 点云约 10 Hz；若实测 `/Odometry` 更低，TEB/costmap 频率必须相应降低。
 - behavior_control 在导航状态每 100 ms 重发一次 `NavigateToPose`，对 TEB 不友好；
   定点测试建议先用 RViz 发 `/goal_pose` 验证 Nav2。
+- 穿门速度模式由 adapter 通过 `/mavros/setpoint_raw/local` 同时下发速度和绝对 yaw
+  （`enable_door_yaw` / `door_yaw_ned`），需确认 MAVROS `setpoint_raw` 插件已加载。
+- adapter 的 `cruise_height` 已与 behavior 对齐为 1.0，修改任一处都要同步。
 - 高度偏置分散：behavior `+0.39`、adapter `+0.31/+0.08`、obstacle `+0.27`；
   修改任一处都要重新标定。
 - Point-LIO 先验地图路径、map_server 地图路径、串口逻辑名都需要按比赛机环境替换。
