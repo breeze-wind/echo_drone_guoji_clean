@@ -1,0 +1,55 @@
+mavros_adapter:
+  ros__parameters:
+    # 安全门限：dry_run 下解锁和模式服务只记录日志，不真正调用。
+    dry_run: true
+
+    # legacy_ned_compatible 保留旧 pymavlink 的符号和高度约定。
+    # 上游节点全部改为 ENU 后，再切换到 mavros_enu。
+    coordinate_mode: "legacy_ned_compatible"
+    frame_id: "map"
+    child_frame_id: "livox"
+
+    # 高度和 PID 常量来自旧飞控节点，台架测试时用于对比 Point-LIO 高度和飞控高度。
+    cruise_height: 0.6
+    passing_door_height: 0.6
+    height_feedback_z_offset: 0.39
+    fcu_reference_z_offset: 0.08
+    vision_pose_z_offset: 0.31
+    pid_height: 0.65
+
+    # 调试状态发布周期，以及 setpoint 输出的输入过期门限。
+    status_period: 1.0
+    setpoint_republish_period: 0.1
+    setpoint_stale_timeout: 1.0
+    pose_stale_timeout: 1.0
+
+    # 可选 RC 解锁桥；设为 false 时 adapter 不会根据 RC 请求解锁。
+    allow_rc_arming: true
+    arm_retry_period: 1.0
+    rc_arm_channels: [1, 2, 3, 4]
+    rc_arm_low_threshold: 1100
+    rc_arm_high_threshold: 1930
+
+    # 模式切换默认关闭，等 setpoint 流确认稳定后再开启。
+    auto_set_mode: false
+    desired_mode: "OFFBOARD"
+    mode_retry_period: 1.0
+
+    # 面向 MAVROS 的话题和服务。
+    mavros_state_topic: "/mavros/state"
+    mavros_rc_topic: "/mavros/rc/in"
+    mavros_arming_service: "/mavros/cmd/arming"
+    mavros_set_mode_service: "/mavros/set_mode"
+    mavros_vision_pose_topic: "/mavros/vision_pose/pose"
+    mavros_position_setpoint_topic: "/mavros/setpoint_position/local"
+    mavros_velocity_setpoint_topic: "/mavros/setpoint_velocity/cmd_vel"
+
+    # 为 behavior_control 和 Point-LIO 保留的旧工作区接口。
+    current_pose_topic: "/robot/current_pose"
+    target_pose_topic: "/robot/target_pose"
+    cmd_vel_topic: "/cmd_vel"
+    nav_state_topic: "/robot/nav_state"
+    passing_door_state_topic: "/robot/passing_door_state"
+    turning_state_topic: "/robot/turning_state"
+    arm_state_topic: "/robot/arm_state"
+    status_topic: "/flight_control/status"

@@ -1,0 +1,13 @@
+.idea
+cmake-build-debug
+build/
+install/
+log/
+__pycache__/
+*.pyc
+.pcd
+.png
+maps
+!robot_bring_up/maps/
+!robot_bring_up/maps/README.md
+PCD

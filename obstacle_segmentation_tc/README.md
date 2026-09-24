@@ -1,0 +1,2 @@
+# obstacle_segmentation_tc
+# 作用：对原始PCL2点云进行下采样，滤波。通过点云法向量和法线夹角，判断是否为障碍物，去除地面。发布只包含障碍物的点云,作为global_costmap和local_costmap的障碍层，（并为插件nav2_behaviors/KeepAwayFromObstacles提供障碍物信息）

@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robot_bring_up</name>
+  <version>0.0.0</version>
+  <description>TODO: Package description</description>
+  <maintainer email="1358446393@qq.com">dovejh</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>rosbag2_cpp</depend>
+
+  <exec_depend>behavior_control</exec_depend>
+  <exec_depend>obstacle_segmentation</exec_depend>
+  <exec_depend>point_lio</exec_depend>
+  <exec_depend>livox_ros_driver2</exec_depend>
+  <exec_depend>teb_local_planner</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>flight_control</exec_depend>
+  <exec_depend>mavros</exec_depend>
+  <exec_depend>robot_serial_manager</exec_depend>
+  <exec_depend>servo_node</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

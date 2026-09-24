@@ -1,0 +1,10 @@
+hardware_mavros:
+  ros__parameters:
+    dry_run: true
+    use_mavros: true
+    fcu_url: "/dev/px4_fcu:230400"
+    gcs_url: ""
+    target_system: "1"
+    target_component: "1"
+    fcu_protocol: "v2.0"
+    respawn_mavros: true

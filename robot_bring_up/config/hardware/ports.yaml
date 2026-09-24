@@ -1,0 +1,23 @@
+robot_serial_manager:
+  ros__parameters:
+    # dry_run=true 时，缺失设备只作为台架提示，不作为实机硬错误。
+    dry_run: true
+    # 串口扫描和状态发布周期，单位秒。
+    scan_period: 1.0
+    # 逻辑设备列表，每个设备的详细配置放在 device.<name> 下。
+    devices: ["px4_fcu", "stm32_servo"]
+
+    # PX4 飞控串口：只由 MAVROS 打开，serial manager 只检查存在性。
+    device.px4_fcu.required: true
+    device.px4_fcu.owner: "mavros"
+    device.px4_fcu.port: "/dev/px4_fcu"
+    device.px4_fcu.baudrate: 230400
+    device.px4_fcu.manufacturer: "CUAV"
+
+    # STM32 舵机串口：由 servo_node 打开和收发。
+    device.stm32_servo.required: true
+    device.stm32_servo.owner: "servo_node"
+    device.stm32_servo.port: "/dev/stm32_servo"
+    device.stm32_servo.baudrate: 115200
+    device.stm32_servo.manufacturer: "STMicroelectronics"
+
