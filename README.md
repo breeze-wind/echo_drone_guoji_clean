@@ -32,12 +32,15 @@ obstacle_segmentation → /cloud_obstacle → Nav2/TEB costmap
 | `teb_local_planner/` | TEB 局部规划器（Foxy fork） |
 | `behavior_control/` | 任务决策状态机 |
 | `flight_control/` | `/robot/*` ↔ MAVROS 适配层 |
+| `mavlink_control/` | 旧 pymavlink 直连 fallback（默认不启动） |
+| `robot_mapping/` | 离线建图：merge_pcd、pcd2pgm |
 | `servo_node/` | STM32 舵机/投放控制 |
 | `robot_serial_manager/` | 串口存在性与 owner 检查 |
 | `robot_interfaces/` | 自定义消息 |
 | `robot_bring_up/` | launch 与全局配置 |
 
-已移除：旧 `pymavlink` fallback、旧行为树、离线建图工具和开发期重构文档。
+说明：`mavlink_control` 和 `robot_mapping` 属于备用/离线工具，不参与主飞行链路；
+旧行为树和开发期重构文档已移除。
 
 ## 快速开始
 

@@ -89,6 +89,16 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('use_mavros')),
     )
 
+    # 旧 pymavlink fallback：默认关闭，仅在 use_legacy_mavlink:=true 且非 dry-run 时启动。
+    legacy_mavlink_node = Node(
+        package='mavlink_control',
+        executable='mavlink_control_node',
+        name='mavlink_control_node',
+        output='screen',
+        parameters=[LaunchConfiguration('legacy_mavlink_params_file')],
+        respawn=True,
+        condition=IfCondition(_true_and_not_dry_run('use_legacy_mavlink')),
+    )
     return LaunchDescription([
         DeclareLaunchArgument(
             'ports_file',
@@ -99,6 +109,13 @@ def generate_launch_description():
             'servo_file',
             default_value=PathJoinSubstitution([hardware_config_dir, 'servo.yaml']),
             description='舵机串口驱动配置。',
+        ),
+        DeclareLaunchArgument(
+            'legacy_mavlink_params_file',
+            default_value=PathJoinSubstitution([
+                FindPackageShare('robot_bring_up'), 'config', 'drone.yaml'
+            ]),
+            description='旧 pymavlink fallback 节点参数文件。',
         ),
         DeclareLaunchArgument(
             'mavros_adapter_file',
@@ -121,6 +138,9 @@ def generate_launch_description():
             'use_mavros', default_value='true',
             description='是否启用 MAVROS 及其 adapter。'),
         DeclareLaunchArgument(
+            'use_legacy_mavlink', default_value='false',
+            description='是否启动旧 pymavlink fallback 节点。'),
+        DeclareLaunchArgument(
             'fcu_url', default_value='/dev/px4_fcu:230400',
             description='MAVROS 连接飞控的串口 URL。'),
         DeclareLaunchArgument(
@@ -139,8 +159,13 @@ def generate_launch_description():
             ),
             condition=IfCondition(_true_and_dry_run('use_mavros')),
         ),
+        LogInfo(
+            msg='hardware.launch.py dry-run: legacy pymavlink fallback is skipped.',
+            condition=IfCondition(_true_and_dry_run('use_legacy_mavlink')),
+        ),
         serial_manager_node,
         servo_node,
         mavros_launch,
         mavros_adapter_node,
+        legacy_mavlink_node,
     ])

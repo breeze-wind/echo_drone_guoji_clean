@@ -159,6 +159,7 @@ case "$MODE" in
       use_serial_manager:=true \
       use_servo:=true \
       use_mavros:=true \
+      use_legacy_mavlink:=false \
       "${@:2}"
     ;;
 
@@ -169,6 +170,7 @@ case "$MODE" in
       use_serial_manager:=true \
       use_servo:=false \
       use_mavros:=false \
+      use_legacy_mavlink:=false \
       "${@:2}"
     ;;
 
@@ -204,6 +206,7 @@ case "$MODE" in
       use_serial_manager:=true \
       use_servo:=true \
       use_mavros:=true \
+      use_legacy_mavlink:=false \
       fcu_url:="${FCU_URL:-/dev/px4_fcu:230400}" \
       "${@:2}"
     ;;
@@ -216,6 +219,7 @@ case "$MODE" in
       use_serial_manager:=true \
       use_servo:=false \
       use_mavros:=true \
+      use_legacy_mavlink:=false \
       fcu_url:="${FCU_URL:-/dev/px4_fcu:230400}" \
       "${@:2}"
     ;;

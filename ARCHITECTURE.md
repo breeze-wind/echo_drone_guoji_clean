@@ -51,6 +51,8 @@ D435 / USB 相机 ──► /robot/image_location, /robot/usb_camera ──► b
 | 导航 | `teb_local_planner/`、Nav2 | NavFn 全局规划 + TEB 局部规划，输出 `/cmd_vel` |
 | 决策 | `behavior_control/` | 任务状态机：起飞、搜索、投掷、穿门、降落 |
 | 飞控适配 | `flight_control/` | `/robot/*` ↔ MAVROS：vision pose、位置/速度 setpoint、解锁/模式 |
+| 飞控 fallback | `mavlink_control/` | 旧 pymavlink 直连 PX4，默认不启动 |
+| 离线建图 | `robot_mapping/` | merge_pcd / pcd2pgm，赛前离线工具 |
 | 执行机构 | `servo_node/` | STM32 舵机串口，收到参数/命令后执行投放 |
 | 硬件健康 | `robot_serial_manager/` | 串口存在性和 owner 检查，不抢占设备 |
 | 接口 | `robot_interfaces/` | `ImageLocation`、`ServoPos` 等自定义消息 |
