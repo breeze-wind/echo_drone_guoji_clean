@@ -6,6 +6,53 @@
 - 系统架构：[`ARCHITECTURE.md`](ARCHITECTURE.md)
 - 试飞检查：[`COMPETITION_CHECKLIST.md`](COMPETITION_CHECKLIST.md)
 
+## 明天试飞计划（新机首飞）
+
+> 目标：只验证 **起飞 + 定点导航**，不跑完整投掷/穿门任务。
+
+### 一、地面 / 无桨
+
+- [ ] 确认雷达是 MID-360s，入口用 `third_party/livox_ros_driver2/launch_ROS2/msg_MID360s_launch.py` 和 `MID360s_config.json`。
+- [ ] `colcon build` + `source install/setup.bash`。
+- [ ] `./run_echo_drone.sh check`、`./run_echo_drone.sh hardware-dry`。
+- [ ] `FCU_URL=/dev/ttyACM0:230400 ./run_echo_drone.sh mavros-state`，确认 `/mavros/state` connected。
+- [ ] 起 `livox → pointlio → obstacle → nav`，检查：
+  - `/livox/lidar`、`/livox/imu`、`/Odometry`、`/robot/current_pose` 有数据；
+  - TF 完整：`map → odom → livox_raw → livox → camera_link`；
+  - costmap 有数据，RViz 中障碍物位置正常。
+- [ ] 先只测 Nav2：RViz 发 `/goal_pose`，短距离（0.5~1 m）定点，绕过 behavior_control。
+
+### 二、定点参数（上桨前改好）
+
+- [ ] `behavior_control/src/behavior_control.cpp`：step 1 当前是 `current_step = 111`；
+      只测定点时临时改成 `current_step = 21;`，跳过随机靶搜索。
+- [ ] `robot_bring_up/config/drone.yaml`：
+  - `if_hit_tank/car/pillbox/tent/bridge: false`（不投弹）
+  - `if_passing_door: false`
+  - `if_need_passing_all: false`
+  - `target_sequence` 不要包含 `tank`
+- [ ] TEB 降载：`controller_frequency` 5~7，costmap `update_frequency` 10，
+      `max_vel_x/y` 先 0.3 左右。
+- [ ] `flight_control/config/mavros_adapter.yaml`：确认 `cruise_height: 1.0`，与 behavior 一致。
+- [ ] 关闭 Point-LIO 自动重启或准备好 RC 接管（`respawn=True` 有空中跳变风险）。
+
+### 三、真机起飞
+
+- [ ] 先起 `./run_echo_drone.sh hardware-real`，再起 sensors/nav，最后起 `./run_echo_drone.sh behavior`。
+- [ ] `behavior_control` 构造函数会等 Nav2 action server 和三个 set_parameters 服务，必须最后启动。
+- [ ] RC 确认：解锁、切 OFFBOARD、切回 Position、kill switch。
+- [ ] 起飞后先悬停 5~10 s，观察高度稳定性和 LIO/气压一致性。
+- [ ] 全程录 bag，准备随时 RC 接管。
+
+### 四、明天重点盯的已知问题
+
+- [ ] Nav2 goal 目前每 100 ms 重发一次，对 TEB 不友好：先用 RViz 验证 Nav2，再测 behavior。
+- [ ] LIO 实测约 6.7 Hz，TEB/costmap 频率和速度都要按实际位姿率降下来。
+- [ ] `map->odom`、`livox_raw->livox` 只在 `drone.launch.py` 里发；分模式启动要自己补 TF。
+- [ ] Point-LIO 先验地图路径、`map_server.yaml_filename`、串口逻辑名要按比赛机实际路径改。
+- [ ] 高度偏置：behavior `+0.39`、adapter `+0.31/+0.08`、obstacle `+0.27`，改动任一处都要重新标定。
+- [ ] 穿门速度模式的绝对 yaw 走 `/mavros/setpoint_raw/local`，确认 MAVROS `setpoint_raw` 插件已加载（明天大概率不测穿门，先记着）。
+
 ## 核心链路
 
 ```text
