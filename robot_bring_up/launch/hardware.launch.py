@@ -5,13 +5,18 @@
 服务调用发生前先验证 ROS 侧连线。
 """
 
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
+import yaml
 
 
 def _true_and_not_dry_run(flag_name):
@@ -34,11 +39,25 @@ def generate_launch_description():
     hardware_config_dir = PathJoinSubstitution([
         FindPackageShare('robot_bring_up'), 'config', 'hardware'
     ])
+    bringup_share = get_package_share_directory('robot_bring_up')
+    frames_path = os.path.join(bringup_share, 'config', 'static_frames.yaml')
+    with open(frames_path, 'r') as frames_file:
+        static_frames = yaml.safe_load(frames_file)['static_frames']
+
+    def transform_args(name):
+        frame = static_frames[name]
+        values = frame['translation'] + frame['rotation']
+        return [str(value) for value in values] + [frame['parent'], frame['child']]
 
     ports_file = LaunchConfiguration('ports_file')
     servo_file = LaunchConfiguration('servo_file')
     mavros_adapter_file = LaunchConfiguration('mavros_adapter_file')
+    mavros_config_file = LaunchConfiguration('mavros_config_file')
     dry_run = LaunchConfiguration('dry_run')
+    dry_run_bool = ParameterValue(
+        PythonExpression(["'", dry_run, "'.lower() == 'true'"]),
+        value_type=bool,
+    )
 
     # 统一串口清单节点；dry-run 下可安全用于设备发现和配置校验。
     serial_manager_node = Node(
@@ -46,7 +65,7 @@ def generate_launch_description():
         executable='robot_serial_manager_node',
         name='robot_serial_manager',
         output='screen',
-        parameters=[ports_file, {'dry_run': dry_run}],
+        parameters=[ports_file, {'dry_run': dry_run_bool}],
         condition=IfCondition(LaunchConfiguration('use_serial_manager')),
     )
 
@@ -56,7 +75,7 @@ def generate_launch_description():
         executable='servo_node',
         name='servo_node',
         output='screen',
-        parameters=[servo_file, {'dry_run': dry_run}],
+        parameters=[servo_file, {'dry_run': dry_run_bool}],
         respawn=True,
         condition=IfCondition(LaunchConfiguration('use_servo')),
     )
@@ -70,10 +89,23 @@ def generate_launch_description():
         ])),
         launch_arguments={
             'fcu_url': LaunchConfiguration('fcu_url'),
+            'gcs_url': LaunchConfiguration('gcs_url'),
             'tgt_system': LaunchConfiguration('target_system'),
             'tgt_component': LaunchConfiguration('target_component'),
             'fcu_protocol': LaunchConfiguration('fcu_protocol'),
+            'config_file': mavros_config_file,
         }.items(),
+        condition=IfCondition(_true_and_not_dry_run('use_mavros')),
+    )
+
+    # MAVROS 的 ODOM 插件会查询 map -> base_link_frd。当前实机定位链路
+    # 由 /mavros/mavros/pose 输入飞控，不依赖该 TF；这里补一个静态
+    # 机体系连接；full 启动后 livox 已接入 map 树。
+    mavros_odom_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='livox_to_base_link_frd_broadcaster',
+        arguments=transform_args('livox_to_base_link_frd'),
         condition=IfCondition(_true_and_not_dry_run('use_mavros')),
     )
 
@@ -84,7 +116,7 @@ def generate_launch_description():
         executable='mavros_adapter_node',
         name='mavros_adapter',
         output='screen',
-        parameters=[mavros_adapter_file, {'dry_run': dry_run}],
+        parameters=[mavros_adapter_file, {'dry_run': dry_run_bool}],
         respawn=True,
         condition=IfCondition(LaunchConfiguration('use_mavros')),
     )
@@ -126,6 +158,14 @@ def generate_launch_description():
             description='MAVROS adapter 节点参数文件。',
         ),
         DeclareLaunchArgument(
+            'mavros_config_file',
+            default_value=PathJoinSubstitution([
+                FindPackageShare('flight_control'), 'config',
+                'mavros_vision_px4.yaml'
+            ]),
+            description='MAVROS PX4 vision 插件配置文件。',
+        ),
+        DeclareLaunchArgument(
             'dry_run', default_value='true',
             description='是否进入 dry-run；true 时不启动真实 MAVROS 连接。'),
         DeclareLaunchArgument(
@@ -143,6 +183,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'fcu_url', default_value='/dev/px4_fcu:230400',
             description='MAVROS 连接飞控的串口 URL。'),
+        DeclareLaunchArgument(
+            'gcs_url', default_value='',
+            description='MAVROS 转发给 QGC 的 GCS URL，留空则不转发。'),
         DeclareLaunchArgument(
             'target_system', default_value='1',
             description='MAVROS 目标系统 ID。'),
@@ -165,6 +208,7 @@ def generate_launch_description():
         ),
         serial_manager_node,
         servo_node,
+        mavros_odom_tf,
         mavros_launch,
         mavros_adapter_node,
         legacy_mavlink_node,

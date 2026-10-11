@@ -114,9 +114,10 @@ D435 / USB 相机 ──► /robot/image_location, /robot/usb_camera ──► b
 | `/robot/arm_state` | adapter → 决策 | 解锁状态 |
 | `/mavros/state` | MAVROS → adapter | 心跳/模式 |
 | `/mavros/rc/in` | MAVROS → adapter | RC 解锁 |
-| `/mavros/vision_pose/pose` | adapter → MAVROS | 视觉位姿 |
-| `/mavros/setpoint_position/local` | adapter → MAVROS | 位置设定点 |
-| `/mavros/setpoint_velocity/cmd_vel` | adapter → MAVROS | 速度设定点 |
+| `/mavros/mavros/pose` | adapter → MAVROS `vision_pose` plugin | PX4 外部视觉输入（Foxy MAVROS 2.4 私有话题） |
+| `/mavros/odometry/out` | MAVROS `odometry` plugin → ROS | 飞控里程计输出；与视觉输入分离 |
+| `/mavros/mavros/local` | adapter → MAVROS `setpoint_position` plugin | 位置设定点（Foxy MAVROS 2.4 私有话题） |
+| `/mavros/mavros/cmd_vel` | adapter → MAVROS `setpoint_velocity` plugin | 速度设定点（Foxy MAVROS 2.4 私有话题） |
 | `/mavros/cmd/arming` / `set_mode` | adapter → MAVROS | 解锁 / OFFBOARD |
 | `/servo_node/set_parameters` | 决策 → servo | 投放触发 |
 | `/servo/status` | servo → 调试 | 舵机状态 |

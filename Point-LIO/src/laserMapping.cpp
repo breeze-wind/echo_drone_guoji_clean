@@ -60,22 +60,27 @@ LaserMappingNode::LaserMappingNode(const rclcpp::NodeOptions &options) : Node("l
     //初始化发布者订阅者
     callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     sub_option.callback_group = callback_group_;
+    constexpr size_t kLidarQueueDepth = 50;
+    constexpr size_t kImuQueueDepth = 200;
+    constexpr size_t kCloudPublisherDepth = 10;
+    constexpr size_t kOdomPublisherDepth = 50;
+
     if (p_pre->lidar_type == AVIA) {
-        sub_pcl_livox_ = this->create_subscription<livox_ros_driver2::msg::CustomMsg>(lid_topic, 200000,
+        sub_pcl_livox_ = this->create_subscription<livox_ros_driver2::msg::CustomMsg>(lid_topic, kLidarQueueDepth,
             std::bind(&LaserMappingNode::livox_pcl_cbk, this, std::placeholders::_1), sub_option);
     } else {
-        sub_pcl_pc = this->create_subscription<sensor_msgs::msg::PointCloud2>(lid_topic, 200000,
+        sub_pcl_pc = this->create_subscription<sensor_msgs::msg::PointCloud2>(lid_topic, kLidarQueueDepth,
             std::bind(&LaserMappingNode::standard_pcl_cbk, this, std::placeholders::_1), sub_option);
     }
-    sub_imu = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic, 200000,
+    sub_imu = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic, kImuQueueDepth,
         std::bind(&LaserMappingNode::imu_cbk, this, std::placeholders::_1), sub_option);
-    pubLaserCloudFull = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered", 100000);
-    pubLaserCloudFull_body = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_body", 100000);
-    pubLaserCloudObstacle = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_obstacle_new", 100000);
+    pubLaserCloudFull = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered", kCloudPublisherDepth);
+    pubLaserCloudFull_body = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_body", kCloudPublisherDepth);
+    pubLaserCloudObstacle = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_obstacle_new", kCloudPublisherDepth);
     //pubLaserCloudEffect = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_effected", 100000);
-    pubLaserCloudMap = this->create_publisher<sensor_msgs::msg::PointCloud2>("/Laser_map", 100000);
-    pubOdomAftMapped = this->create_publisher<nav_msgs::msg::Odometry>(odom_topic, 100000);
-    pubPath = this->create_publisher<nav_msgs::msg::Path>("/path", 100000);
+    pubLaserCloudMap = this->create_publisher<sensor_msgs::msg::PointCloud2>("/Laser_map", kCloudPublisherDepth);
+    pubOdomAftMapped = this->create_publisher<nav_msgs::msg::Odometry>(odom_topic, kOdomPublisherDepth);
+    pubPath = this->create_publisher<nav_msgs::msg::Path>("/path", kOdomPublisherDepth);
     plane_pub = this->create_publisher<visualization_msgs::msg::Marker>("planner_normal", 1000);
     current_pose_pub_ = this->create_publisher<geometry_msgs::msg::TransformStamped>("/robot/current_pose", 10);
     static_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
@@ -233,6 +238,8 @@ void LaserMappingNode::readParameters()
     this->get_parameter_or<int>("pcd_save.interval", pcd_save_interval, -1);
     this->get_parameter_or<bool>("pcd_save.use_pcd_map_", use_pcd_map_, true);
     this->get_parameter_or<std::string>("pcd_save.prior_PCD_map_path", priorPCDMapPath, "");
+    RCLCPP_INFO(this->get_logger(), "PCD saving: enabled=%s, interval=%d scans, output=%sPCD/",
+                pcd_save_en ? "true" : "false", pcd_save_interval, ROOT_DIR);
     this->get_parameter_or<vector<double> >("init_pos.init_trans", initial_trans,
                                             vector<double>{0.0, 0.0, 0.0});
     this->get_parameter_or<vector<double> >("init_pos.initial_rot", initial_rot,

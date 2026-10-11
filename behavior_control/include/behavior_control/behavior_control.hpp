@@ -138,6 +138,11 @@ private:
     /// 目标点顺序
     std::vector<std::string> target_sequence_;
 
+    /// Simple configured patrol route: x/y pairs from a separate YAML file.
+    std::vector<double> mission_waypoints_;
+    bool simple_waypoint_mission_;
+    bool mission_waypoint_goal_sent_;
+
     /// 巡航高度
     double cruise_height_;
     /// 识别高度

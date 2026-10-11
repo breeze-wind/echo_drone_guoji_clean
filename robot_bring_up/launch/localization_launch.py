@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import yaml
 
 from ament_index_python.packages import get_package_share_directory
 
@@ -22,7 +23,7 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LoadComposableNodes
 from launch_ros.actions import Node
-from launch_ros.descriptions import ComposableNode, ParameterFile
+from launch_ros.descriptions import ComposableNode
 from nav2_common.launch import RewrittenYaml
 
 
@@ -55,15 +56,22 @@ def generate_launch_description():
         "use_sim_time": use_sim_time,
     }
 
-    configured_params = ParameterFile(
-        RewrittenYaml(
-            source_file=params_file,
-            root_key=namespace,
-            param_rewrites=param_substitutions,
-            convert_types=True,
-        ),
-        allow_substs=True,
+    configured_params = RewrittenYaml(
+        source_file=params_file,
+        root_key=namespace,
+        param_rewrites=param_substitutions,
+        convert_types=True,
     )
+
+    default_map_paths_file = os.path.join(
+        get_package_share_directory("robot_bring_up"), "config", "map_paths.yaml")
+    with open(default_map_paths_file, "r") as stream:
+        map_paths = yaml.safe_load(stream)["map_paths"]
+    map_yaml = map_paths["nav_map_yaml"]
+    if not os.path.isabs(map_yaml):
+        map_yaml = os.path.join(
+            get_package_share_directory("robot_bring_up"), "maps", map_yaml)
+    map_server_params = {"yaml_filename": map_yaml}
 
     stdout_linebuf_envvar = SetEnvironmentVariable(
         "RCUTILS_LOGGING_BUFFERED_STREAM", "1"
@@ -123,7 +131,7 @@ def generate_launch_description():
                 output="screen",
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=[configured_params, map_server_params],
                 arguments=["--ros-args", "--log-level", log_level],
                 remappings=remappings,
             ),
@@ -150,7 +158,7 @@ def generate_launch_description():
                 package="nav2_map_server",
                 plugin="nav2_map_server::MapServer",
                 name="map_server",
-                parameters=[configured_params],
+                parameters=[configured_params, map_server_params],
                 remappings=remappings,
             ),
             ComposableNode(

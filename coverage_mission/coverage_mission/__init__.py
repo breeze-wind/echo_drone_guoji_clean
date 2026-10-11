@@ -1,0 +1,1 @@
+"""Standalone serpentine search mission."""

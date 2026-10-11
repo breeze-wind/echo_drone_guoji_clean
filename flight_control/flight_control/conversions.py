@@ -53,6 +53,15 @@ def mavros_enu_yaw_for_legacy_ned_yaw(yaw_ned):
     return math.pi / 2.0 - yaw_ned
 
 
+def heading_hold_yaw_rate(target_yaw, current_yaw, gain, max_rate):
+    """用 ENU 航向误差生成有限幅的偏航角速度，正确处理 ±π 环绕。"""
+    error = math.atan2(
+        math.sin(target_yaw - current_yaw),
+        math.cos(target_yaw - current_yaw),
+    )
+    return max(-max_rate, min(max_rate, gain * error))
+
+
 def quaternion_from_euler_xyzw(roll, pitch, yaw):
     """由 roll、pitch、yaw 生成 geometry_msgs 使用的四元数组。"""
     half_roll = roll * 0.5

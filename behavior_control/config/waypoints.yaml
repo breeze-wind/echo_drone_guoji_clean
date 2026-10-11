@@ -1,0 +1,7 @@
+behavior_control_node:
+  ros__parameters:
+    # Five map-frame Nav2 goals, ordered as x1,y1,...,x5,y5.
+    # These defaults reuse the existing configured competition landmarks;
+    # edit these coordinates for the actual route before flight.
+    simple_waypoint_mission: true
+    mission_waypoints: [2.7, 1.0, 1.2, -1.0, 4.7, 2.5, 1.7, 3.2, 4.07, -1.5]

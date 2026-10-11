@@ -18,6 +18,11 @@ def generate_launch_description():
         'params_file',
         default=default_yaml_path
     )
+    waypoint_yaml_path = LaunchConfiguration(
+        'waypoints_file',
+        default=os.path.join(
+            get_package_share_directory('behavior_control'),
+            'config', 'waypoints.yaml'))
     declare_yaml_path = DeclareLaunchArgument(
         'params_file',
         default_value=yaml_path,
@@ -28,13 +33,18 @@ def generate_launch_description():
         package="behavior_control",
         executable="behavior_control_node",
         output="screen",
-        parameters=[yaml_path],
+        parameters=[yaml_path, waypoint_yaml_path],
         name="behavior_control_node",
         respawn=True # 重启
     )
     # 创建LaunchDescription对象launch_description,用于描述launch文件
     launch_description = LaunchDescription(
-        [declare_yaml_path, node_01]
+        [declare_yaml_path,
+         DeclareLaunchArgument(
+             'waypoints_file',
+             default_value=waypoint_yaml_path,
+             description='Separate YAML file containing the five route points'),
+         node_01]
     )
     # 返回让ROS2根据launch描述执行节点
     return launch_description

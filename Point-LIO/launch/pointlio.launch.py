@@ -7,7 +7,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition
 
-from launch_ros.actions import Node, SetUseSimTime
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
@@ -54,6 +54,6 @@ def generate_launch_description():
     ld.add_action(declare_rviz_config_path_cmd)
 
     ld.add_action(point_lio_node)
-    # ld.add_action(rviz_node)
+    ld.add_action(rviz_node)
 
     return ld

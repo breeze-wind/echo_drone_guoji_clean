@@ -1,0 +1,77 @@
+coverage_mission_node:
+  ros__parameters:
+    # Search rectangle corners in map frame; mandatory before mission startup.
+    corner_a: [0.0,-2.39]
+    corner_b: [9.0,3.61]
+    # At 1 m height the configured camera sees about 1.28 x 0.96 m on ground.
+    # Start with overlap on the short side; verify using the real camera/FOV.
+    lane_spacing: 0.7
+    # Optional manual route in map-frame XY, flattened as [x1, y1, x2, y2, ...].
+    # When non-empty it replaces the generated serpentine route; each point uses
+    # search_height and keeps the initial aircraft heading.
+    custom_waypoints_xy: []
+    # Must match flight_control/mavros_adapter.yaml cruise_height in velocity mode.
+    search_height: 1.2
+    lane_axis: auto
+    frame_id: map
+    target_topic: /target_perception/targets
+    # MapTargetLocalizer publishes map-frame ground_position on this topic.
+    waypoints_topic: /coverage_search/waypoints
+    auto_start: true
+    # After the normal arm/OFFBOARD/height checks, enter this mission stage.
+    # Set to 'search' for the route, or 'door' to test the full door sequence.
+    start_after_takeoff: door # 起飞高度确认后直接前往穿门起点，不执行蛇形搜索
+    # One-based route index used only when start_after_takeoff is 'search'.
+    start_waypoint_index: 1
+    start_service: /coverage_mission/start
+    nav_action: /navigate_to_pose
+    current_pose_topic: /robot/current_pose
+    # Point-LIO publishes this pose as odom->livox_raw; map->odom is a pure
+    # vertical +0.39 m transform in static_frames.yaml.
+    pose_source_frame: odom
+    pose_stale_timeout_sec: 1.0
+    target_pose_topic: /robot/target_pose
+    target_pose_child_frame: livox
+    arm_state_topic: /robot/arm_state
+    nav_state_topic: /robot/nav_state
+    landing_service: /mavros/set_mode
+    target_confirm_count: 5
+    target_stability_radius: 0.12
+    target_min_confidence: 0.45
+    goal_timeout_sec: 180.0
+    # On Nav2 action abort/timeout, hold current map pose and retry same goal.
+    nav_retry_delay_sec: 2.0
+    # Pause at the current pose for this long when a red cross is first detected.
+    red_cross_hold_sec: 2.0
+    # Three distinct targets each receive one cargo; then proceed to this door start.
+    max_deliveries: 3
+    # Flattened map-frame XY pairs: cargo 1, cargo 2, cargo 3.
+    drop_offsets_xy: [-0.08, -0.08, -0.08, 0.08, 0.08, 0.08]
+    # Public UI/ROS states: 2 releases cargo 1, 3 releases cargo 2, 4 releases cargo 3.
+    drop_commands: [2, 3, 4]
+    # Door passage waypoints in map-frame XY; measure and fill all three before flight.
+    door_start_xy: [1.25,0.406]
+    door_center_xy: [1.89,0.478] # required: center of the doorway
+    door_end_xy: [3.6,0.281] # required: waypoint just beyond the doorway
+    # After reaching door_start_xy, position control lowers to this height;
+    # the adapter then keeps the same height while Nav2 traverses center/end.
+    door_height: 0.90
+    passing_door_state_topic: /robot/passing_door_state
+    drop_height: 0.50
+    pose_z_offset: 0.39
+    align_tolerance: 0.12
+    height_tolerance: 0.10
+    stable_pose_samples: 4
+    actuator_topic: /electromagnet/set_state
+    actuator_status_topic: /electromagnet/status
+    # Real delivery is enabled, but mission takeoff/search stays blocked until
+    # the electromagnet node confirms MCU state over the configured serial port.
+    actuator_output_enabled: true
+    require_actuator_status: true
+    actuator_status_timeout_sec: 2.0
+    actuator_ack_timeout_sec: 4.0
+    # Repeat current idempotent electromagnet SET state to tolerate lost ROS messages.
+    actuator_repeat_period_sec: 1.0
+    drop_dwell_sec: 3.0
+    mavros_state_topic: /mavros/state
+    require_offboard: true

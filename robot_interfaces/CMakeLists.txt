@@ -14,6 +14,8 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
         "msg/Transmit/ServoPos.msg"
         "msg/Receive/ImageLocation.msg"
+        "msg/Perception/TargetDetection.msg"
+        "msg/Perception/TargetDetectionArray.msg"
         DEPENDENCIES std_msgs geometry_msgs
 )
 

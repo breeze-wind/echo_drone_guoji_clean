@@ -28,6 +28,7 @@ class RobotSerialManager(Node):
         # 周期扫描会持续更新 /hardware/serial_status，方便 rqt/topic echo 观察。
         self.declare_parameter('scan_period', 1.0)
         # devices 是逻辑设备名列表，具体端口、owner、波特率在 device.<name> 下声明。
+        self.declare_parameter('devices', [])
 
         self.dry_run = bool(self.get_parameter('dry_run').value)
         self.scan_period = float(self.get_parameter('scan_period').value)

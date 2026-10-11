@@ -1,0 +1,14 @@
+electromagnet_node:
+  ros__parameters:
+    port: /dev/ttyUSB0
+    baudrate: 115200
+    dry_run: false
+    # std_msgs/Int32 state is sent directly as MCU SET N: 1..4 = 3..0
+    # connected cargo magnets held (bench verified); MCU STATE=0 is startup.
+    command_topic: /electromagnet/set_state
+    status_topic: /electromagnet/status
+    status_rate_hz: 2.0
+    ack_timeout_sec: 2.0
+    # MCU reports four outputs; only outputs 1-3 carry cargo. SET 4 is all-off.
+    protocol_channel_count: 4
+    cargo_channel_count: 3

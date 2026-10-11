@@ -61,6 +61,15 @@ def generate_launch_description():
         convert_types=True,
     )
 
+    teb_params_file = os.path.join(
+        get_package_share_directory('robot_bring_up'), 'config', 'teb.yaml')
+    configured_teb_params = RewrittenYaml(
+        source_file=teb_params_file,
+        root_key=namespace,
+        param_rewrites={},
+        convert_types=True,
+    )
+
     return LaunchDescription([
         SetEnvironmentVariable('RCUTILS_LOGGING_BUFFERED_STREAM', '1'),
 
@@ -89,12 +98,12 @@ def generate_launch_description():
             default_value=os.path.join(
                 get_package_share_directory('nav2_bt_navigator'),
                 'behavior_trees',
-                'navigate_w_replanning_and_recovery.xml'),
+                'navigate_w_replanning_time.xml'),
             description='Full path to the behavior tree xml file to use'),
 
         DeclareLaunchArgument(
             'map_subscribe_transient_local',
-            default_value='false',
+            default_value='true',
             description='Whether to set the map subscriber QoS to transient local'),
 
         DeclareLaunchArgument(
@@ -123,7 +132,7 @@ def generate_launch_description():
             output='screen',
             respawn=use_respawn,
             respawn_delay=2.0,
-            parameters=[configured_params],
+            parameters=[configured_params, configured_teb_params],
             arguments=['--ros-args', '--log-level', log_level],
             remappings=remappings),
 

@@ -1,0 +1,61 @@
+target_camera:
+  ros__parameters:
+    device_id: 0
+    image_topic: /camera/image_raw
+    camera_info_topic: /camera/camera_info
+    frame_id: camera_link
+    width: 640
+    height: 480
+    fps: 30.0
+    fourcc: MJPG
+    fx: 499.6183
+    fy: 501.6010
+    cx: 279.6429
+    cy: 217.2060
+    calibration_width: 640
+    calibration_height: 480
+    distortion: [0.019251, -0.039608, 0.001383, -0.007422, -0.013079]
+
+target_localization:
+  ros__parameters:
+    image_topic: /camera/image_raw
+    camera_info_topic: /camera/camera_info
+    detections_topic: /target_perception/rays
+    debug_image_topic: /target_perception/debug_image
+    publish_debug_image: true
+    show_window: true
+    # Empty means use CameraInfo.header.frame_id, then Image.header.frame_id.
+    # Detection rays are published in this calibrated camera optical frame;
+    # world projection is done by map_target_localizer using image-time pose.
+    camera_frame: ""
+    model_path: /home/echo/Downloads/best.pt
+    confidence: 0.55
+    iou: 0.5
+    image_size: 640
+    device: "0"
+    half_precision: true
+    minimum_circle_score: 0.70
+    maximum_rate_hz: 10.0
+    fx: 499.6183
+    fy: 501.6010
+    cx: 279.6429
+    cy: 217.2060
+    calibration_width: 640
+    calibration_height: 480
+    distortion: [0.019251, -0.039608, 0.001383, -0.007422, -0.013079]
+
+map_target_localizer:
+  ros__parameters:
+    rays_topic: /target_perception/rays
+    targets_topic: /target_perception/targets
+    current_pose_topic: /robot/current_pose
+    camera_frame: camera_link
+    pose_source_frame: odom
+    map_frame: map
+    # Keep these synchronized with robot_bring_up/config/static_frames.yaml.
+    pose_z_offset: 0.39
+    ground_z_map: 0.0
+    pose_sync_tolerance_sec: 0.30
+    pose_wait_timeout_sec: 1.0
+    camera_in_livox_translation: [-0.08, 0.0, -0.20]
+    camera_in_livox_rotation_xyzw: [0.0, 1.0, 0.0, 0.0]

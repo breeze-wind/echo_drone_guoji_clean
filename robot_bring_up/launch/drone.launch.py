@@ -3,6 +3,7 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
+import yaml
 from launch.substitutions import LaunchConfiguration
 from launch.actions import DeclareLaunchArgument
 from launch.actions import IncludeLaunchDescription
@@ -25,6 +26,14 @@ def generate_launch_description():
     livox_driver_path = get_package_share_directory("livox_ros_driver2")
 
     yaml_path = os.path.join(robot_bringup_path, "config", "drone.yaml")
+    frames_path = os.path.join(robot_bringup_path, "config", "static_frames.yaml")
+    with open(frames_path, 'r') as frames_file:
+        static_frames = yaml.safe_load(frames_file)['static_frames']
+
+    def transform_args(name):
+        frame = static_frames[name]
+        values = frame['translation'] + frame['rotation']
+        return [str(value) for value in values] + [frame['parent'], frame['child']]
 
     param_if_map = LaunchConfiguration("if_map", default=if_map)
     declare_if_map = DeclareLaunchArgument(
@@ -68,6 +77,9 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             [point_lio_path, "/launch", "/pointlio.launch.py"]
         ),
+        launch_arguments={
+            "rviz": "false",
+        }.items(),
     )
     obstacle_segmentation_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -101,26 +113,28 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='map_to_odom_broadcaster',
-        arguments=['0.0', '0.0', '0.39',  '0.0', '0.0', '0.0', '1.0','map', 'odom']
+        arguments=transform_args('map_to_odom')
     )
-    # livox_raw -> livox: x'=-y, y'=x, z'=z (+90deg rotation about z)
+    # MID-360s is mounted with its forward axis aligned to the aircraft.
+    # Keep the Point-LIO sensor frame and the downstream livox frame aligned.
     livox_raw_to_livox = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='livox_raw_to_livox_broadcaster',
-        arguments=['0.0', '0.0', '0.0',  '0.0', '0.0', '0.7071068', '0.7071068','livox_raw', 'livox']
+        arguments=transform_args('livox_raw_to_livox')
     )
     livox_to_mavlink_body = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='livox_to_mavlink_body_broadcaster',
-        arguments=['0.0', '0.0', '-0.08',  '1.0', '0.0', '0.0', '0.0','livox', 'mavlink_body']
+        arguments=transform_args('livox_to_mavlink_body')
     )
+    # camera_link mount translation and optical-frame rotation are in static_frames.yaml.
     livox_to_camera = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='livox_to_camera_broadcaster',
-        arguments=['0.065', '-0.065', '-0.26',  '0.3827', '0.9239', '0.0', '0.0','livox', 'camera_link']
+        arguments=transform_args('livox_to_camera')
     )
 
     # 创建LaunchDescription对象launch_description,用于描述launch文件

@@ -8,6 +8,7 @@
 import math
 
 from flight_control.conversions import (
+    heading_hold_yaw_rate,
     legacy_nav_velocity,
     legacy_passing_door_velocity,
     legacy_target_position,
@@ -63,3 +64,11 @@ def test_legacy_yaw_is_inverse_of_mavros_ned_conversion():
         rel_tol=1e-9,
         abs_tol=1e-9,
     )
+
+
+def test_heading_hold_yaw_rate_wraps_and_limits():
+    assert math.isclose(heading_hold_yaw_rate(0.2, 0.1, 0.8, 0.12), 0.08)
+    assert math.isclose(heading_hold_yaw_rate(-math.pi + 0.05,
+                                               math.pi - 0.05, 0.8, 0.12), 0.08)
+    assert heading_hold_yaw_rate(1.0, 0.0, 0.8, 0.12) == 0.12
+    assert heading_hold_yaw_rate(0.0, 1.0, 0.8, 0.12) == -0.12

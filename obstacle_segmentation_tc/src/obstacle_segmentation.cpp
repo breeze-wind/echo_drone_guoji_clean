@@ -1,5 +1,7 @@
 #include "obstacle_segmentation/obstacle_segmentation.hpp"
 
+#include <cmath>
+
 ObstacleSegmentationNode::ObstacleSegmentationNode(std::string name, const rclcpp::NodeOptions& options)
     : Node(name, options)
 {
@@ -7,6 +9,7 @@ ObstacleSegmentationNode::ObstacleSegmentationNode(std::string name, const rclcp
     // 声明参数
     this->declare_parameter("input_cloud_topic", "input_cloud");
     this->declare_parameter("output_cloud_topic", "output_cloud");
+    this->declare_parameter("output_frame", "map");
     this->declare_parameter("base_frame", "base_link");
     this->declare_parameter("leaf_size", 0.1);
     this->declare_parameter("point_num_for_normal", 50);
@@ -28,6 +31,7 @@ ObstacleSegmentationNode::ObstacleSegmentationNode(std::string name, const rclcp
     RCLCPP_INFO(this->get_logger(), "点云分割节点初始化");
     this->get_parameter("input_cloud_topic", input_cloud_topic_);
     this->get_parameter("output_cloud_topic", output_cloud_topic_);
+    this->get_parameter("output_frame", output_frame_);
     this->get_parameter("base_frame", base_frame_);
     this->get_parameter("leaf_size", leaf_size_);
     this->get_parameter("point_num_for_normal", point_num_for_normal_);
@@ -54,7 +58,6 @@ ObstacleSegmentationNode::ObstacleSegmentationNode(std::string name, const rclcp
     pass_through_filter_z_.setFilterLimitsNegative(false);
     voxfilter.setLeafSize(leaf_size_, leaf_size_, leaf_size_);
 
-    current_z_ = 0.0;
     obstacle_height_ = 2.0;
 
     pcl_cnt = 0;
@@ -72,8 +75,6 @@ ObstacleSegmentationNode::ObstacleSegmentationNode(std::string name, const rclcp
     output_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(output_cloud_topic_, 10);
     input_cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         input_cloud_topic_, 10, std::bind(&ObstacleSegmentationNode::cloudCallback, this, std::placeholders::_1));
-    current_pose_sub_ = this->create_subscription<geometry_msgs::msg::TransformStamped>("/robot/current_pose",
-            10, std::bind(&ObstacleSegmentationNode::CurrentPoseCallback, this, std::placeholders::_1));
     clear_state_sub_ = this->create_subscription<std_msgs::msg::Bool>("/robot/clear_state",
             10, std::bind(&ObstacleSegmentationNode::ClearStateCallback, this, std::placeholders::_1));
     obstacle_height_sub_ = this->create_subscription<std_msgs::msg::Float64>("/robot/obstacle_height", 10,
@@ -86,6 +87,33 @@ void ObstacleSegmentationNode::cloudCallback(const sensor_msgs::msg::PointCloud2
     if (msg->data.empty())
     {
         RCLCPP_ERROR(this->get_logger(), "接收到的点云数据为空.");
+        segement_cloud->clear();
+        pcl_cnt = 0;
+        return;
+    }
+    if (msg->header.frame_id.empty())
+    {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+            "Input cloud has no frame_id; dropping it rather than guessing a transform");
+        segement_cloud->clear();
+        pcl_cnt = 0;
+        return;
+    }
+
+    geometry_msgs::msg::TransformStamped cloud_to_map;
+    try
+    {
+        cloud_to_map = tfbuffer_->lookupTransform(
+            output_frame_, msg->header.frame_id, rclcpp::Time(msg->header.stamp),
+            rclcpp::Duration::from_seconds(0.15));
+    }
+    catch (const tf2::TransformException& ex)
+    {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+            "No %s <- %s TF at cloud stamp; dropping cloud: %s",
+            output_frame_.c_str(), msg->header.frame_id.c_str(), ex.what());
+        segement_cloud->clear();
+        pcl_cnt = 0;
         return;
     }
 
@@ -93,27 +121,30 @@ void ObstacleSegmentationNode::cloudCallback(const sensor_msgs::msg::PointCloud2
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::fromROSMsg(*msg, *cloud);
 
-    Eigen::Affine3f map_to_livox = Eigen::Affine3f::Identity();
-    Eigen::Vector3f translation(odom_array[0], odom_array[1], odom_array[2]);
-    Eigen::Quaternionf rotation(odom_array[3], odom_array[4], odom_array[5], odom_array[6]);
-    map_to_livox.translation() = translation;
-    map_to_livox.linear() = rotation.toRotationMatrix();
-    Eigen::Affine3f livox_to_map = map_to_livox.inverse();
-    pcl::transformPointCloud(*cloud, *cloud, map_to_livox); //点云转到map世界系进行处理
+    const Eigen::Matrix4f cloud_to_map_matrix =
+        tf2::transformToEigen(cloud_to_map).matrix().cast<float>();
+    pcl::transformPointCloud(*cloud, *cloud, cloud_to_map_matrix);
+    const float sensor_z_in_map = static_cast<float>(cloud_to_map.transform.translation.z);
 
     pcl_cnt++;
 
-    for (long i = 0; i < cloud->points.size(); i++)
+    for (const auto& point : cloud->points)
     {
-        if (cloud->points[i].z < 0.2 || cloud->points[i].z > obstacle_height_)
+        if (!std::isfinite(point.x) ||
+            !std::isfinite(point.y) ||
+            !std::isfinite(point.z))
         {
             continue;
         }
-        if (cloud->points[i].z - current_z_ < 0.1)
+        if (point.z < 0.2 || point.z > obstacle_height_)
         {
-            if (cloud->points[i].z - current_z_ > -0.2)
+            continue;
+        }
+        if (point.z - sensor_z_in_map < 0.1)
+        {
+            if (point.z - sensor_z_in_map > -0.2)
             {
-                segement_cloud->points.push_back(cloud->points[i]);
+                segement_cloud->points.push_back(point);
             }
         }
     }
@@ -161,14 +192,13 @@ void ObstacleSegmentationNode::cloudCallback(const sensor_msgs::msg::PointCloud2
         //     }
         // }
 
-        pcl::transformPointCloud(*segement_cloud, *segement_cloud, livox_to_map); //点云转回livox系发布
         segement_cloud->width = segement_cloud->points.size();
         segement_cloud->height = 1;
         segement_cloud->is_dense = true;
 
         pcl::toROSMsg(*segement_cloud, *output_cloud);
 
-        output_cloud->header.frame_id = "livox";
+        output_cloud->header.frame_id = output_frame_;
         output_cloud->header.stamp = msg->header.stamp;
         output_cloud_pub_->publish(*output_cloud);
         segement_cloud->points.clear();
@@ -176,18 +206,6 @@ void ObstacleSegmentationNode::cloudCallback(const sensor_msgs::msg::PointCloud2
     }
 
     // RCLCPP_INFO(this->get_logger(), "障碍物点云数据正在发布");
-}
-
-void ObstacleSegmentationNode::CurrentPoseCallback(const geometry_msgs::msg::TransformStamped::SharedPtr msg)
-{
-    current_z_ = msg->transform.translation.z + 0.27;
-    odom_array[0] = msg->transform.translation.x;
-    odom_array[1] = msg->transform.translation.y;
-    odom_array[2] = msg->transform.translation.z + 0.27;
-    odom_array[3] = msg->transform.rotation.w;
-    odom_array[4] = msg->transform.rotation.x;
-    odom_array[5] = msg->transform.rotation.y;
-    odom_array[6] = msg->transform.rotation.z;
 }
 
 void ObstacleSegmentationNode::ClearStateCallback(const std_msgs::msg::Bool::SharedPtr msg)

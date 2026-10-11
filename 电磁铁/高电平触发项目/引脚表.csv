@@ -1,0 +1,8 @@
+功能,STM32引脚,CubeMX模式,连接到,说明
+按钮,PA0,GPIO_Input Pull-up,按钮一端,按钮另一端接GND
+电磁铁1控制,PB0,GPIO_Output,MOSFET第1路IN,高电平=工作
+电磁铁2控制,PB1,GPIO_Output,MOSFET第2路IN,高电平=工作
+电磁铁3控制,PB10,GPIO_Output,MOSFET第3路IN,高电平=工作
+下载调试,PA13,Serial Wire SWDIO,ST-Link SWDIO,不要占用
+下载调试,PA14,Serial Wire SWCLK,ST-Link SWCLK,不要占用
+共地,GND,-,MOSFET GND和外部电源负极,必须共地

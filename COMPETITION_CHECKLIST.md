@@ -36,7 +36,7 @@
       `obstacle +0.27` 的符号和含义。
 - [ ] 无桨状态用尺子/测距对比 LIO z、气压、目标高度。
 - [ ] 确认 PX4 `EKF2_HGT_MODE`、`EKF2_EV_*`、baro 权重；室内优先考虑视觉/测距高度。
-- [ ] 检查 `/mavros/vision_pose/pose` 的 z 符号和单位正确。
+- [ ] 检查 `/mavros/mavros/pose` 的 z 符号和单位正确（Foxy MAVROS 2.4 外部视觉输入）。
 
 ## 3. 起飞前
 

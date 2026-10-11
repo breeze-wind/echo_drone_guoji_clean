@@ -1,0 +1,28 @@
+# Static transform measurements in metres and ROS quaternion order (x, y, z, w).
+# Translation is the child-frame origin expressed in the parent frame.
+static_frames:
+  map_to_odom:
+    parent: map
+    child: odom
+    translation: [0.0, 0.0, 0.39]
+    rotation: [0.0, 0.0, 0.0, 1.0]
+  livox_raw_to_livox:
+    parent: livox_raw
+    child: livox
+    translation: [0.0, 0.0, 0.0]
+    rotation: [0.0, 0.0, 0.0, 1.0]
+  livox_to_mavlink_body:
+    parent: livox
+    child: mavlink_body
+    translation: [0.0, 0.0, -0.05]
+    rotation: [1.0, 0.0, 0.0, 0.0]
+  livox_to_camera:
+    parent: livox
+    child: camera_link
+    translation: [-0.08, 0.0, -0.20]
+    rotation: [0.0, 1.0, 0.0, 0.0]
+  livox_to_base_link_frd:
+    parent: livox
+    child: base_link_frd
+    translation: [0.0, 0.0, -0.05]
+    rotation: [1.0, 0.0, 0.0, 0.0]

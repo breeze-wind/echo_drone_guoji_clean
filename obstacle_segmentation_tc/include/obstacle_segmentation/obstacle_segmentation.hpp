@@ -49,14 +49,9 @@ public:
 
     void cloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
 
-    /// 接收从point-lio节点传来的当前位姿
-    void CurrentPoseCallback(const geometry_msgs::msg::TransformStamped::SharedPtr msg);
-
     void ClearStateCallback(const std_msgs::msg::Bool::SharedPtr msg);
 
     void ObstacleHeightCallback(const std_msgs::msg::Float64::SharedPtr msg);
-
-    double odom_array[7];
 
 private:
     // 创建滤波器对象
@@ -68,6 +63,7 @@ private:
 
     std::string input_cloud_topic_;
     std::string output_cloud_topic_;
+    std::string output_frame_;
 
     pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
 
@@ -86,7 +82,6 @@ private:
     bool if_need_clear;
     int cout;
     std::string base_frame_;
-    double current_z_;
     double obstacle_height_;
 
     int pcl_cnt;
@@ -98,8 +93,6 @@ private:
 
     std::unique_ptr<tf2_ros::Buffer> tfbuffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
-    /// 接收当前位姿
-    rclcpp::Subscription<geometry_msgs::msg::TransformStamped>::SharedPtr current_pose_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr input_cloud_sub_;
     rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr obstacle_height_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr clear_state_sub_;

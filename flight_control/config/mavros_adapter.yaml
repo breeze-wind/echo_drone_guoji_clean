@@ -10,14 +10,18 @@ mavros_adapter:
     child_frame_id: "livox"
 
     # 高度和 PID 常量来自旧飞控节点，台架测试时用于对比 Point-LIO 高度和飞控高度。
-    cruise_height: 1.0
-    passing_door_height: 0.6
+    cruise_height: 1.2
+    passing_door_height: 0.9
     height_feedback_z_offset: 0.39
     fcu_reference_z_offset: 0.08
     vision_pose_z_offset: 0.31
     pid_height: 0.65
+    # 进入 OFFBOARD 时锁定当时机头方向；Nav2 速度模式用有限幅 yaw-rate 修正。
+    hold_heading: true
+    heading_hold_kp: 0.8
+    heading_hold_max_rate: 0.12
 
-    # 穿门速度模式下通过 setpoint_raw/local 同时给速度和绝对 yaw（NED）。
+    # 穿门速度模式沿用 MAVROS 速度话题，闭环追踪指定的 NED 航向。
     enable_door_yaw: true
     door_yaw_ned: 1.57
 
@@ -44,10 +48,13 @@ mavros_adapter:
     mavros_rc_topic: "/mavros/rc/in"
     mavros_arming_service: "/mavros/cmd/arming"
     mavros_set_mode_service: "/mavros/set_mode"
-    mavros_vision_pose_topic: "/mavros/vision_pose/pose"
-    mavros_position_setpoint_topic: "/mavros/setpoint_position/local"
-    mavros_velocity_setpoint_topic: "/mavros/setpoint_velocity/cmd_vel"
-    mavros_raw_setpoint_topic: "/mavros/setpoint_raw/local"
+    # Foxy MAVROS 2.4 vision_pose subscription in this workspace resolves to
+    # /mavros/mavros/pose. This is an input endpoint, not PX4's fused pose.
+    mavros_vision_pose_topic: "/mavros/mavros/pose"
+    # This Foxy MAVROS 2.4 UAS node resolves plugin-private subscriptions
+    # under /mavros/mavros, not the ROS1-style plugin sub-namespaces.
+    mavros_position_setpoint_topic: "/mavros/mavros/local"
+    mavros_velocity_setpoint_topic: "/mavros/mavros/cmd_vel"
 
     # 为 behavior_control 和 Point-LIO 保留的旧工作区接口。
     current_pose_topic: "/robot/current_pose"

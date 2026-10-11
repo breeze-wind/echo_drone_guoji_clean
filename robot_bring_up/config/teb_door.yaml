@@ -1,0 +1,11 @@
+# 独立的穿门 TEB 动态参数配置。
+# 仅覆盖动态调参阶段需要更保守的平移速度、加速度及路径跟随权重；
+# 普通飞行参数仍由 teb.yaml 管理，障碍物与机体 footprint 沿用普通配置。
+FollowPath:
+  max_vel_x: 0.25
+  max_vel_y: 0.25
+  max_vel_x_backwards: 0.15
+  acc_lim_x: 0.20
+  acc_lim_y: 0.20
+  weight_optimaltime: 100.0
+  weight_viapoint: 300.0

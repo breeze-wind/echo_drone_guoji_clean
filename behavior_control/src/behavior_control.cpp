@@ -5,6 +5,7 @@
 #include "behavior_control/behavior_control.hpp"
 
 #include <cmath>
+#include <stdexcept>
 
 namespace
 {
@@ -40,6 +41,8 @@ BehaviorControl::BehaviorControl(std::string name) : Node("behavior_control")
     this->declare_parameter<std::vector<double>>("prev_random_target", std::vector<double>{0.0, 0.0});
     this->declare_parameter<std::vector<double>>("prev_random_tank_target", std::vector<double>{0.0, 0.0});
     this->declare_parameter<std::vector<std::string>>("target_sequence", std::vector<std::string>{"tent", "car", "pillbox", "tank"});
+    this->declare_parameter("simple_waypoint_mission", false);
+    this->declare_parameter<std::vector<double>>("mission_waypoints", std::vector<double>{});
     this->declare_parameter("cruise_height", 0.6);
     this->declare_parameter("detection_height", 1.5);
     this->declare_parameter("H_detection_height", 1.5);
@@ -84,6 +87,30 @@ BehaviorControl::BehaviorControl(std::string name) : Node("behavior_control")
     this->get_parameter<std::vector<double>>("passing_door_src_2", passing_door_src_2_);
     this->get_parameter<std::vector<double>>("passing_door_des", passing_door_des_);
     this->get_parameter<std::vector<std::string>>("target_sequence", target_sequence_);
+    this->get_parameter("simple_waypoint_mission", simple_waypoint_mission_);
+    this->get_parameter<std::vector<double>>("mission_waypoints", mission_waypoints_);
+    mission_waypoint_goal_sent_ = false;
+    if (simple_waypoint_mission_ && mission_waypoints_.size() != 10)
+    {
+        throw std::runtime_error(
+            "simple waypoint mission requires exactly five x/y pairs (10 values)");
+    }
+    for (const double coordinate : mission_waypoints_)
+    {
+        if (!std::isfinite(coordinate))
+            throw std::runtime_error("mission_waypoints must contain finite coordinates");
+    }
+    if (simple_waypoint_mission_)
+    {
+        RCLCPP_INFO(this->get_logger(),
+            "单点巡航任务已启用：5 个航点，巡航高度 %.2f m",
+            cruise_height_);
+        for (size_t i = 0; i < 5; ++i)
+        {
+            RCLCPP_INFO(this->get_logger(), "航点 %zu: (%.2f, %.2f)", i + 1,
+                mission_waypoints_[2 * i], mission_waypoints_[2 * i + 1]);
+        }
+    }
     this->get_parameter<std::vector<double>>("random_target_search_1", random_target_search_1_);
     this->get_parameter<std::vector<double>>("random_target_search_2", random_target_search_2_);
     this->get_parameter<std::vector<double>>("random_target_search_3", random_target_search_3_);
@@ -200,13 +227,20 @@ BehaviorControl::BehaviorControl(std::string name) : Node("behavior_control")
     camera_frame_ = "camera_link";
     target_frame_ = "target_position";
 
-    livox_to_camera = tf_buffer_->lookupTransform("livox", "camera_link", rclcpp::Time(),
-                                    rclcpp::Duration::from_seconds(0.5));
-    // RCLCPP_INFO(this->get_logger(), "-----------------+++++++++++++++livox_to_camera x y z: %lf, %lf, %lf",
-    //     livox_to_camera.transform.translation.x, livox_to_camera.transform.translation.y, livox_to_camera.transform.translation.z);
-    livox_to_camera_affine = tf2::transformToEigen(livox_to_camera);
-    Eigen::Affine3d map_to_livox_affine = Eigen::Affine3d::Identity(); //map->雷达
-    Eigen::Affine3d map_to_camera_affine = Eigen::Affine3d::Identity();
+    // Camera TF is only needed by the legacy vision/drop mission. The simple
+    // waypoint patrol does not consume image coordinates, and may be launched
+    // before the LiDAR static TF has arrived. Initialize these transforms
+    // safely so that starting the patrol never throws during construction.
+    livox_to_camera_affine = Eigen::Affine3d::Identity();
+    map_to_livox_affine = Eigen::Affine3d::Identity();
+    map_to_camera_affine = Eigen::Affine3d::Identity();
+    if (!simple_waypoint_mission_)
+    {
+        livox_to_camera = tf_buffer_->lookupTransform(
+            "livox", "camera_link", rclcpp::Time(),
+            rclcpp::Duration::from_seconds(0.5));
+        livox_to_camera_affine = tf2::transformToEigen(livox_to_camera);
+    }
 
     camera_pt_.header.frame_id = "camera_link";
     camera_pt_.point.z = 0.0;
@@ -225,10 +259,9 @@ BehaviorControl::BehaviorControl(std::string name) : Node("behavior_control")
     mission_period_ms = std::chrono::milliseconds(static_cast<int64_t>(100));
 
     navigate_to_pose_client_ = rclcpp_action::create_client<nav2_msgs::action::NavigateToPose>(this, "navigate_to_pose");
-    if (!this->navigate_to_pose_client_->wait_for_action_server()) {
-        RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
-        rclcpp::shutdown();
-    }
+    if (!navigate_to_pose_client_->action_server_is_ready())
+        RCLCPP_WARN(this->get_logger(),
+            "Nav2 action server is not ready yet; will wait without blocking startup");
     navigate_to_pose_action_ = nav2_msgs::action::NavigateToPose::Goal();
     navigate_to_pose_action_.pose.pose.position.x = 0.0;
     navigate_to_pose_action_.pose.pose.position.y = 0.0;
@@ -259,18 +292,16 @@ BehaviorControl::BehaviorControl(std::string name) : Node("behavior_control")
     servo_parameter_client_ = this->create_client<rcl_interfaces::srv::SetParameters>("/servo_node/set_parameters");
     controller_server_parameter_client_ = this->create_client<rcl_interfaces::srv::SetParameters>("/controller_server/set_parameters");
     local_costmap_parameter_client_ = this->create_client<rcl_interfaces::srv::SetParameters>("/local_costmap/local_costmap/set_parameters");
-    //等待服务可用
-    while (!servo_parameter_client_->wait_for_service(std::chrono::seconds(1)))
+    // The waypoint mission does not adjust servo/controller/costmap
+    // parameters. Keep those legacy dependencies from blocking its startup.
+    if (!simple_waypoint_mission_)
     {
-        RCLCPP_WARN(this->get_logger(), "servo_parameter service not available, waiting...");
-    }
-    while (!controller_server_parameter_client_->wait_for_service(std::chrono::seconds(1)))
-    {
-        RCLCPP_WARN(this->get_logger(), "controller_server_parameter service not available, waiting...");
-    }
-    while (!local_costmap_parameter_client_->wait_for_service(std::chrono::seconds(1)))
-    {
-        RCLCPP_WARN(this->get_logger(), "local_costmap_parameter service not available, waiting...");
+        while (!servo_parameter_client_->wait_for_service(std::chrono::seconds(1)))
+            RCLCPP_WARN(this->get_logger(), "servo_parameter service not available, waiting...");
+        while (!controller_server_parameter_client_->wait_for_service(std::chrono::seconds(1)))
+            RCLCPP_WARN(this->get_logger(), "controller_server_parameter service not available, waiting...");
+        while (!local_costmap_parameter_client_->wait_for_service(std::chrono::seconds(1)))
+            RCLCPP_WARN(this->get_logger(), "local_costmap_parameter service not available, waiting...");
     }
 
     step_timer_ = this->create_wall_timer(step_period_ms, std::bind(&BehaviorControl::step_timer_callback, this));
@@ -556,12 +587,41 @@ void BehaviorControl::step_timer_callback()
     {
         if(fabs(current_z_ - cruise_height_) <= 0.05)
         {
-            // 绕圈调试已关闭（试飞前）：确认起飞后直接进入原任务流程。
-            // 注意：恢复后会先进入 111/112 随机靶搜索，再进 21 定点导航。
-            // if(takeoff_circle_enabled_)
-            //     current_step = kTakeoffCircleStep;
-            // else
-            current_step = 111;  //current_step=61;
+            if (simple_waypoint_mission_)
+            {
+                current_step = 201;
+                mission_waypoint_goal_sent_ = false;
+                RCLCPP_INFO(this->get_logger(),
+                    "巡航高度已到，开始执行配置的 5 个航点");
+            }
+            else
+            {
+                // Legacy competition search/drop/door mission.
+                current_step = 111;
+            }
+        }
+    }
+    else if (current_step >= 201 && current_step <= 205)
+    {
+        const size_t index = static_cast<size_t>(current_step - 201);
+        const double goal_x = mission_waypoints_[2 * index];
+        const double goal_y = mission_waypoints_[2 * index + 1];
+        if (std::fabs(current_x_ - goal_x) < 0.25 &&
+            std::fabs(current_y_ - goal_y) < 0.25)
+        {
+            RCLCPP_INFO(this->get_logger(), "到达航点 %zu/5: (%.2f, %.2f)",
+                index + 1, goal_x, goal_y);
+            mission_waypoint_goal_sent_ = false;
+            if (current_step == 205)
+            {
+                current_step = 83;
+                RCLCPP_INFO(this->get_logger(),
+                    "5 个航点完成，在当前位置开始下降");
+            }
+            else
+            {
+                ++current_step;
+            }
         }
     }
     else if(current_step == kTakeoffCircleStep) //起飞后持续执行匀速圆周运动
@@ -996,7 +1056,49 @@ void BehaviorControl::mission_timer_callback()
     RCLCPP_INFO(this->get_logger(), "+++++++++++++++++tank position: %lf, %lf+++++++++++++++++",
         random_tank_target_[0], random_tank_target_[1]);
     RCLCPP_INFO(this->get_logger(), "+++++++++++++++if_find_random_tank_target: %d+++++++++++++++++",if_find_random_tank_target_);
-    if(current_step == 0)
+    if (current_step >= 201 && current_step <= 205)
+    {
+        if (!mission_waypoint_goal_sent_)
+        {
+            if (navigate_to_pose_client_->action_server_is_ready())
+            {
+                const size_t index = static_cast<size_t>(current_step - 201);
+                rclcpp_action::Client<nav2_msgs::action::NavigateToPose>::Goal action_goal;
+                action_goal.pose.header.stamp = this->now();
+                action_goal.pose.header.frame_id = "map";
+                action_goal.pose.pose.position.x = mission_waypoints_[2 * index];
+                action_goal.pose.pose.position.y = mission_waypoints_[2 * index + 1];
+                action_goal.pose.pose.orientation.w = 1.0;
+                navigate_to_pose_client_->async_send_goal(action_goal);
+                mission_waypoint_goal_sent_ = true;
+                RCLCPP_INFO(this->get_logger(), "导航航点 %zu/5: (%.2f, %.2f)",
+                    index + 1, mission_waypoints_[2 * index],
+                    mission_waypoints_[2 * index + 1]);
+            }
+            else
+            {
+                RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                    "等待 Nav2 navigate_to_pose action server；仍保持当前位置/高度");
+            }
+        }
+        if_nav = true;
+    }
+    else if(current_step == 83)
+    {
+        // Hold the current XY and reuse the existing direct-position descent
+        // convention used by states 81/82.
+        current_target_position_.transform.translation.x = current_x_;
+        current_target_position_.transform.translation.y = current_y_;
+        if (current_z_ + 0.3 >= 0.5)
+            current_target_position_.transform.translation.z = current_z_ - 0.5;
+        else
+            current_target_position_.transform.translation.z = -0.3;
+        target_pose_pub_->publish(current_target_position_);
+        if_nav = false;
+        current_passing_door_ = false;
+        if_turning = false;
+    }
+    else if(current_step == 0)
     {
         current_target_position_.transform.translation.x = 0.0;
         current_target_position_.transform.translation.y = 0.0;
