@@ -10,7 +10,7 @@ mavros_adapter:
     child_frame_id: "livox"
 
     # 高度和 PID 常量来自旧飞控节点，台架测试时用于对比 Point-LIO 高度和飞控高度。
-    cruise_height: 1.2
+    cruise_height: 0.9
     passing_door_height: 0.9
     height_feedback_z_offset: 0.39
     fcu_reference_z_offset: 0.08

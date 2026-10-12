@@ -11,7 +11,7 @@ coverage_mission_node:
     # search_height and keeps the initial aircraft heading.
     custom_waypoints_xy: []
     # Must match flight_control/mavros_adapter.yaml cruise_height in velocity mode.
-    search_height: 1.2
+    search_height: 0.9
     lane_axis: auto
     frame_id: map
     target_topic: /target_perception/targets
@@ -49,10 +49,11 @@ coverage_mission_node:
     drop_offsets_xy: [-0.08, -0.08, -0.08, 0.08, 0.08, 0.08]
     # Public UI/ROS states: 2 releases cargo 1, 3 releases cargo 2, 4 releases cargo 3.
     drop_commands: [2, 3, 4]
-    # Door passage waypoints in map-frame XY; measure and fill all three before flight.
-    door_start_xy: [1.25,0.406]
-    door_center_xy: [1.89,0.478] # required: center of the doorway
-    door_end_xy: [3.6,0.281] # required: waypoint just beyond the doorway
+    # Fixed door geometry in the map frame. After reaching the start the aircraft
+    # descends, then navigates directly to the end, with no fixed middle point.
+    # The map frame still needs to be aligned to the physical course after restart.
+    door_start_xy: [0.28,0.32]
+    door_end_xy: [3.63,0.304] # required: waypoint just beyond the doorway
     # After reaching door_start_xy, position control lowers to this height;
     # the adapter then keeps the same height while Nav2 traverses center/end.
     door_height: 0.90

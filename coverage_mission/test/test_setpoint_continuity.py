@@ -13,11 +13,14 @@ def _mission_in(state):
     mission.armed = True
     mission.offboard = True
     mission.require_offboard = True
+    mission.mavros_connected = True
+    mission.mavros_mode = 'OFFBOARD'
     mission.goal_started_at = None
     mission.current_pose_time = time.monotonic()
     mission.pose_stale_timeout = 1.0
     mission.current_pose = object()
     mission.nav_state_pub = Mock()
+    mission.passing_door_pub = Mock()
     mission._publish_actuator_keepalive = Mock()
     mission._print_mission_status = Mock()
     mission._publish_position_target = Mock()

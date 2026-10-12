@@ -2,9 +2,9 @@
 
 整体流程：等待飞手解锁/OFFBOARD并升至搜索高度 → 按航点蛇形搜索 →
 确认靶标后导航到投递点并精确对位、下降、投递、爬升 → 继续搜索；
-投递次数用尽或搜索航线结束后，导航到穿门起点并保持。
+投递次数用尽或搜索航线结束后，导航到穿门起点、降低高度并连续导航到门后终点。
 
-Nav2 负责搜索/投递接近/穿门起点的平面导航；位置 setpoint 负责起飞、
+Nav2 负责搜索/投递接近/穿门的平面导航；位置 setpoint 负责起飞、
 悬停确认、投递精对准/升降等阶段。飞控解锁和模式切换始终由飞手完成。
 """
 
@@ -31,11 +31,11 @@ from robot_interfaces.msg import TargetDetectionArray
 
 
 class CoverageMissionNode(Node):
-    # 任务状态常量。穿门流程依次导航到起点、下降、导航到门中心和门终点。
+    # 穿门只向门后终点发送一次导航目标。
     (WAIT_START, WAIT_ARM, SEARCHING, DROP_APPROACH, DROP_ALIGN,
      DROP_DESCEND, DROP_DWELL, DROP_ASCEND, DOOR_APPROACH, DOOR_LOWER,
-     DOOR_TEB_SWITCH, DOOR_CENTER, DOOR_END, DOOR_DONE, LANDING, FINISHED,
-     TARGET_CONFIRM_HOLD) = range(17)
+     DOOR_TEB_SWITCH, DOOR_TRAVERSE, DOOR_DONE, LANDING, FINISHED,
+     TARGET_CONFIRM_HOLD) = range(16)
 
     def __init__(self):
         """声明并读取配置，生成航线，建立 ROS 通信接口及任务初始状态。"""
@@ -70,7 +70,6 @@ class CoverageMissionNode(Node):
         self.declare_parameter('drop_offsets_xy', [-0.08, -0.08, -0.08, 0.08, 0.08, 0.08])
         self.declare_parameter('drop_commands', [2, 3, 4])
         self.declare_parameter('door_start_xy', [])
-        self.declare_parameter('door_center_xy', [])
         self.declare_parameter('door_end_xy', [])
         self.declare_parameter('door_height', 0.90)
         self.declare_parameter('door_teb_profile_file', '')
@@ -123,7 +122,6 @@ class CoverageMissionNode(Node):
         self.drop_offsets = [float(v) for v in list_parameter('drop_offsets_xy')]
         self.drop_commands = [int(v) for v in list_parameter('drop_commands')]
         self.door_start = [float(v) for v in list_parameter('door_start_xy')]
-        self.door_center = [float(v) for v in list_parameter('door_center_xy')]
         self.door_end = [float(v) for v in list_parameter('door_end_xy')]
         self.door_height = float(get('door_height').value)
         self.door_teb_profile_file = str(get('door_teb_profile_file').value)
@@ -152,21 +150,23 @@ class CoverageMissionNode(Node):
                 self.max_deliveries < 1 or
                 len(self.drop_offsets) != 2 * self.max_deliveries or
                 len(self.drop_commands) != self.max_deliveries or
-                len(self.door_start) != 2 or len(self.door_center) != 2 or
-                len(self.door_end) != 2 or self.drop_height < 0.0 or
-                self.door_height < 0.0 or
+                len(self.door_start) != 2 or len(self.door_end) != 2 or
+                self.drop_height < 0.0 or self.door_height < 0.0 or
                 self.stable_pose_samples < 1 or
                 self.pose_stale_timeout <= 0.0 or self.nav_retry_delay <= 0.0 or
                 self.red_cross_hold <= 0.0 or self.actuator_repeat_period <= 0.0):
             raise ValueError(
                 'invalid mission config: need 3 XY offsets, 3 actuator states, '
-                'door_start_xy, door_center_xy, door_end_xy, and positive tolerances/counts')
+                'door_start_xy, door_end_xy, and positive tolerances/counts')
         if self.start_after_takeoff not in ('search', 'door'):
             raise ValueError("start_after_takeoff must be 'search' or 'door'")
         if not all(math.isfinite(value) for point in
-                   (self.door_start, self.door_center, self.door_end)
+                   (self.door_start, self.door_end)
                    for value in point) or not math.isfinite(self.door_height):
             raise ValueError('door coordinates and door_height must be finite')
+        if math.hypot(self.door_end[0] - self.door_start[0],
+                      self.door_end[1] - self.door_start[1]) < 0.5:
+            raise ValueError('door_start_xy and door_end_xy must be at least 0.5 m apart')
         self.door_teb_parameters = self._load_door_teb_profile(
             self.door_teb_profile_file)
 
@@ -305,11 +305,12 @@ class CoverageMissionNode(Node):
             '起飞检查通过后进入阶段=%s，搜索起始航点=%d。' %
             (self.start_after_takeoff, self.start_waypoint_index))
         self.get_logger().info(
-            '穿门航点：start=(%.2f, %.2f), center=(%.2f, %.2f), '
-            'end=(%.2f, %.2f), height=%.2f m' %
+            '穿门航点：start=(%.2f, %.2f), end=(%.2f, %.2f), height=%.2f m' %
             (self.door_start[0], self.door_start[1],
-             self.door_center[0], self.door_center[1],
              self.door_end[0], self.door_end[1], self.door_height))
+        self.get_logger().warning(
+            '穿门固定航点要求当前 map/odom 与建图时水平对齐；'
+            'Point-LIO 从零启动本身不保证全局重定位。门内动态障碍由 Nav2 实时代价地图处理。')
 
     def _load_door_teb_profile(self, path):
         """读取门洞 TEB 独立参数，只允许动态回调明确支持的数值参数。"""
@@ -391,8 +392,7 @@ class CoverageMissionNode(Node):
             self.DOOR_APPROACH: 'DOOR_APPROACH',
             self.DOOR_LOWER: 'DOOR_LOWER',
             self.DOOR_TEB_SWITCH: 'DOOR_TEB_SWITCH',
-            self.DOOR_CENTER: 'DOOR_CENTER',
-            self.DOOR_END: 'DOOR_END',
+            self.DOOR_TRAVERSE: 'DOOR_TRAVERSE',
         }.get(state, str(state))
 
     def _arm_cb(self, msg):
@@ -668,10 +668,7 @@ class CoverageMissionNode(Node):
                 self.stable_pose_count = 0
             if self.stable_pose_count >= self.stable_pose_samples:
                 if self.start_after_takeoff == 'door':
-                    self.state = self.DOOR_APPROACH
-                    self.get_logger().warning(
-                        'Takeoff checks passed; starting at door approach.')
-                    self._send_door_goal()
+                    self._start_door_approach()
                 else:
                     self.next_index = self.start_waypoint_index - 1
                     self.state = self.SEARCHING
@@ -683,8 +680,8 @@ class CoverageMissionNode(Node):
         # 所有飞行任务阶段都监视解锁和 OFFBOARD；丢失时转入 AUTO.LAND 请求。
         active_states = (self.SEARCHING, self.DROP_APPROACH, self.DROP_ALIGN,
                          self.DROP_DESCEND, self.DROP_DWELL, self.DROP_ASCEND,
-                         self.DOOR_APPROACH, self.DOOR_LOWER, self.DOOR_CENTER,
-                         self.DOOR_TEB_SWITCH, self.DOOR_END,
+                         self.DOOR_APPROACH, self.DOOR_LOWER, self.DOOR_TRAVERSE,
+                         self.DOOR_TEB_SWITCH,
                          self.TARGET_CONFIRM_HOLD)
         if self.state in active_states:
             if not self.armed or (self.require_offboard and not self.offboard):
@@ -698,7 +695,7 @@ class CoverageMissionNode(Node):
             # topic. Repeat it throughout navigation: a single lost transition
             # must not leave the adapter in position mode with an expired goal.
             if self.state in (self.SEARCHING, self.DROP_APPROACH,
-                              self.DOOR_APPROACH, self.DOOR_CENTER, self.DOOR_END):
+                              self.DOOR_APPROACH, self.DOOR_TRAVERSE):
                 self.nav_state_pub.publish(Bool(data=True))
             else:
                 # Keep direct position-control mode latched through alignment,
@@ -707,7 +704,7 @@ class CoverageMissionNode(Node):
             # 穿门模式会让适配器在速度控制时锁定 passing_door_height。
             self.passing_door_pub.publish(Bool(data=self.state in (
                 self.DOOR_LOWER, self.DOOR_TEB_SWITCH,
-                self.DOOR_CENTER, self.DOOR_END)))
+                self.DOOR_TRAVERSE)))
             if (self.goal_started_at and
                     time.monotonic() - self.goal_started_at > self.goal_timeout):
                 kind = self.goal_kind
@@ -761,7 +758,7 @@ class CoverageMissionNode(Node):
                 self._request_door_teb_profile()
                 return
             if self.state in (self.SEARCHING, self.DROP_APPROACH,
-                              self.DOOR_APPROACH, self.DOOR_CENTER, self.DOOR_END):
+                              self.DOOR_APPROACH, self.DOOR_TRAVERSE):
                 if time.monotonic() < self.nav_retry_at:
                     return
                 if (self.goal_handle is None and not self.goal_request_pending
@@ -772,10 +769,8 @@ class CoverageMissionNode(Node):
                         self._send_drop_goal()
                     elif self.state == self.DOOR_APPROACH:
                         self._send_door_goal()
-                    elif self.state == self.DOOR_CENTER:
-                        self._send_door_center_goal()
                     else:
-                        self._send_door_end_goal()
+                        self._send_door_traverse_goal()
                 return
             if not pose_fresh or self.current_pose is None:
                 self.get_logger().warning('Pose stale during precision/drop phase; aborting safely')
@@ -983,14 +978,11 @@ class CoverageMissionNode(Node):
         elif self.state == self.DOOR_TEB_SWITCH:
             message = ('任务阶段：门口悬停并切换门洞 TEB 参数，等待 Nav2 确认；'
                        '高度=%.2f m' % self.door_height)
-        elif self.state == self.DOOR_CENTER:
-            message = ('任务阶段：穿门，前往门中心坐标=(%.2f, %.2f)，高度=%.2f m' %
-                       (self.door_center[0], self.door_center[1], self.door_height))
-        elif self.state == self.DOOR_END:
-            message = ('任务阶段：穿门，前往门终点坐标=(%.2f, %.2f)，高度=%.2f m' %
-                       (self.door_end[0], self.door_end[1], self.door_height))
+        elif self.state == self.DOOR_TRAVERSE:
+            message = ('任务阶段：连续穿门，目标=门后终点(%.2f, %.2f)，高度=%.2f m' %
+                       (*self.door_end, self.door_height))
         elif self.state == self.DOOR_DONE:
-            message = ('任务阶段：穿门完成，在终点 (%.2f, %.2f) 保持，高度=%.2f m' %
+            message = ('任务阶段：已到门后终点 (%.2f, %.2f)，保持，高度=%.2f m' %
                        (self.door_end[0], self.door_end[1], self.door_height))
         elif self.state == self.LANDING:
             message = '任务阶段：请求 PX4 AUTO.LAND'
@@ -1033,15 +1025,10 @@ class CoverageMissionNode(Node):
         yaw = self.fixed_heading_yaw if self.fixed_heading_yaw is not None else 0.0
         self._send_nav_goal('door_start', self.door_start[0], self.door_start[1], yaw)
 
-    def _send_door_center_goal(self):
-        """穿门第二个 Nav2 航点：门中心；适配器维持配置的穿门高度。"""
+    def _send_door_traverse_goal(self):
+        """直接导航到门后终点，途中不要求在固定中间点停车。"""
         yaw = self.fixed_heading_yaw if self.fixed_heading_yaw is not None else 0.0
-        self._send_nav_goal('door_center', self.door_center[0], self.door_center[1], yaw)
-
-    def _send_door_end_goal(self):
-        """穿门最后一个 Nav2 航点：门的另一侧终点。"""
-        yaw = self.fixed_heading_yaw if self.fixed_heading_yaw is not None else 0.0
-        self._send_nav_goal('door_end', self.door_end[0], self.door_end[1], yaw)
+        self._send_nav_goal('door_traverse', self.door_end[0], self.door_end[1], yaw)
 
     def _request_door_teb_profile(self):
         """原地等待 Nav2 接受门洞 TEB 配置，确认成功后才允许穿门。"""
@@ -1077,7 +1064,7 @@ class CoverageMissionNode(Node):
         self.teb_switch_future.add_done_callback(self._door_teb_profile_result)
 
     def _door_teb_profile_result(self, future):
-        """只在控制器原子确认参数更新后，才提交门中心 Nav2 目标。"""
+        """只在控制器原子确认参数更新后，才提交门后终点 Nav2 目标。"""
         self.teb_switch_future = None
         if self.state != self.DOOR_TEB_SWITCH:
             return
@@ -1093,11 +1080,11 @@ class CoverageMissionNode(Node):
             '%s=%.3g' % (name, value)
             for name, value in self.door_teb_parameters.items())
         self.get_logger().warning(
-            '门洞 TEB 参数已确认生效：%s；开始导航至门中心 (%.2f, %.2f)。' %
-            (applied, self.door_center[0], self.door_center[1]))
-        self.state = self.DOOR_CENTER
+            '门洞 TEB 参数已确认生效：%s；单次导航至门后终点 (%.2f, %.2f)。' %
+            (applied, self.door_end[0], self.door_end[1]))
+        self.state = self.DOOR_TRAVERSE
         self.nav_state_pub.publish(Bool(data=True))
-        self._send_door_center_goal()
+        self._send_door_traverse_goal()
 
     def _send_nav_goal(self, kind, x, y, yaw):
         """统一构造并发送 Nav2 NavigateToPose 目标，记录异步请求令牌。"""
@@ -1128,6 +1115,10 @@ class CoverageMissionNode(Node):
                                    (self.next_index + 1, len(self.route), x, y))
         elif kind == 'drop':
             self.get_logger().info('Navigating to drop point: (%.3f, %.3f)' % (x, y))
+        elif kind == 'door_traverse':
+            self.get_logger().warning(
+                '连续穿门：Nav2 直接导航至门后终点 (%.3f, %.3f)。' %
+                (x, y))
         else:
             self.get_logger().info('Navigating to door start: (%.3f, %.3f)' % (x, y))
         send_future = self.nav_client.send_goal_async(goal)
@@ -1203,14 +1194,9 @@ class CoverageMissionNode(Node):
             self.nav_state_pub.publish(Bool(data=False))
             self.state = self.DOOR_LOWER
             self.stable_pose_count = 0
-        elif kind == 'door_center':
-            self.get_logger().info('已到达门中心，继续前往门终点。')
-            self.state = self.DOOR_END
-            self.nav_state_pub.publish(Bool(data=True))
-            self._send_door_end_goal()
-        else:
+        elif kind == 'door_traverse':
             self.get_logger().warning(
-                '[阶段] 穿门完成：已到达终点 (%.3f, %.3f)，在此保持。' %
+                'Nav2 已到达门后终点 (%.3f, %.3f)，保持。' %
                 (self.door_end[0], self.door_end[1]))
             self.state = self.DOOR_DONE
 
@@ -1220,8 +1206,7 @@ class CoverageMissionNode(Node):
             'search': self.SEARCHING,
             'drop': self.DROP_APPROACH,
             'door_start': self.DOOR_APPROACH,
-            'door_center': self.DOOR_CENTER,
-            'door_end': self.DOOR_END,
+            'door_traverse': self.DOOR_TRAVERSE,
         }.get(kind)
         if expected_state is None or self.state != expected_state:
             self._begin_landing('cannot retry navigation outside its mission phase')
@@ -1255,8 +1240,7 @@ class CoverageMissionNode(Node):
             detail = {
                 'drop': '投递点',
                 'door_start': '穿门起点',
-                'door_center': '门中心',
-                'door_end': '穿门终点',
+                'door_traverse': '门后终点',
             }[kind]
         self.get_logger().error(
             'Nav2 %s失败（%s）；已在当前位置悬停，%.1f 秒后重试同一目标（第 %d 次）。'
@@ -1298,16 +1282,20 @@ class CoverageMissionNode(Node):
     def _begin_door_leg(self):
         """结束搜索/投递阶段，切到导航模式并前往配置的穿门起点。"""
         if self.state in (self.DOOR_APPROACH, self.DOOR_LOWER,
-                          self.DOOR_CENTER, self.DOOR_END,
+                          self.DOOR_TRAVERSE,
                           self.DOOR_DONE, self.LANDING, self.FINISHED):
             return
-        self.get_logger().warning(
-            '[阶段] 开始穿门流程：搜索结束，已投递 %d 件；起点=(%.3f, %.3f)。' %
-            (self.delivery_count, self.door_start[0], self.door_start[1]))
+        self._start_door_approach()
+
+    def _start_door_approach(self):
+        """开始向配置的固定门口起点导航。"""
         self.passing_door_pub.publish(Bool(data=False))
-        self.nav_state_pub.publish(Bool(data=True))
-        self.state = self.DOOR_APPROACH
         self.goal_started_at = None
+        self.state = self.DOOR_APPROACH
+        self.nav_state_pub.publish(Bool(data=True))
+        self.get_logger().warning(
+            '[阶段] 开始穿门：已投递 %d 件；固定门口起点=(%.3f, %.3f)。' %
+            (self.delivery_count, *self.door_start))
         self._send_door_goal()
 
     def _begin_landing(self, reason):

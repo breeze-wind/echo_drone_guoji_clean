@@ -232,8 +232,8 @@ local_costmap:
             global_frame: map
             robot_base_frame: livox
             rolling_window: True
-            width: 8
-            height: 8
+            width: 5
+            height: 5
             resolution: 0.05
             footprint: "[ [0.225, 0.225], [-0.225, 0.225], [-0.225, -0.225], [0.225, -0.225] ]"
             plugins: ["static_layer", "obstacle_layer", "inflation_layer"]

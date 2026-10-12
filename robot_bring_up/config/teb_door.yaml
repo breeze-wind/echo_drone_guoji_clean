@@ -7,5 +7,8 @@ FollowPath:
   max_vel_x_backwards: 0.15
   acc_lim_x: 0.20
   acc_lim_y: 0.20
+  # 80 cm door, 45 cm footprint: use a 10 cm optimization clearance per side.
+  # The costmap footprint collision check remains active.
+  min_obstacle_dist: 0.10
   weight_optimaltime: 100.0
   weight_viapoint: 300.0

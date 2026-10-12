@@ -11,7 +11,10 @@ controller_server:
             global_plan_overwrite_orientation: True # 覆盖全局规划器提供的局部子目标的方向（因为它们通常仅提供 2D 路径）
             allow_init_with_backwards_motion: False
             max_global_plan_lookahead_dist: 1.0 # 降低局部优化长度，减少TEB计算量。
-            global_plan_viapoint_sep: -0.1 # 如果为正，则从全局计划中提取途经点（路径跟踪模式）。该值确定参考路径的分辨率（沿全局规划的每两个连续经由点之间的最小间隔，如果为负值：禁用）。
+            #global_plan_viapoint_sep: -0.1 # 如果为正，则从全局计划中提取途经点（路径跟踪模式）。该值确定参考路径的分辨率（沿全局规划的每两个连续经由点之间的最小间隔，如果为负值：禁用）。
+            global_plan_viapoint_sep: 0.4  # 每约 0.4 m 从全局路径取一个途经点；负数表示关闭
+            #weight_viapoint: 50.0          # TEB 贴近这些途经点的力度
+
             global_plan_prune_distance: 0.2 #3.17
             # via_points_ordered: TDOD
             force_reinit_new_goal_dist: 1.0 # 如果之前的目标更新后的间隔超过指定值（以米为单位），则重新初始化轨迹（跳过热启动）
@@ -48,8 +51,8 @@ controller_server:
 
             # Obstacles
 
-            min_obstacle_dist: 0.16 # 机器人与障碍物之间的最小距离（以米为单位）3.17
-            inflation_dist: 1.2 # 非零惩罚成本的障碍物周围的缓冲区（应大于min_obstacle_dist才能生效）。3.17
+            min_obstacle_dist: 0.10 # 机器人与障碍物之间的最小距离（米）；穿门配置保持一致。
+            inflation_dist: 0.8 # 非零惩罚成本的障碍物周围的缓冲区（应大于min_obstacle_dist才能生效）。3.17
             include_costmap_obstacles: True # 指定是否应考虑本地成本图的障碍。每个被标记为障碍物的单元格都被视为点障碍物。因此，不要RM选择非常小的代价图分辨率，因为它会增加计算时间。
             costmap_obstacles_behind_robot_dist: 1.0 # 限制机器人后方规划时考虑的占用的本地成本图障碍（指定距离以米为单位）。
             obstacle_poses_affected: 8 # 每个障碍物影响的轨迹位姿数量，降低可减小优化规模。
@@ -57,7 +60,7 @@ controller_server:
             obstacle_association_force_inclusion_factor: 20.0 # 非传统障碍物关联策略尝试在优化过程中仅将相关障碍物与离散化轨迹连接起来。但指定距离内的所有障碍物都必须包含在内（作为min_obstacle_dist的倍数）。例如，选择 2.0 是为了在 2.0* min_obstacle_dist 的半径内强制考虑障碍物。 [仅当参数legacy_obstacle_association为false时才使用此参数]
             obstacle_association_cutoff_factor: 100.0 # 但超出[value]* min_obstacle_dist的倍数时，所有障碍物在优化期间都会被忽略。首先处理参数barrier_association_force_inclusion_factor 。 [仅当参数legacy_obstacle_association为false时才使用此参数]
 
-            dynamic_obstacle_inflation_dist: 1.4
+            dynamic_obstacle_inflation_dist: 1.1
             include_dynamic_obstacles: False # 动态障碍预测计算量较大，低负载模式关闭。
 
             costmap_converter_plugin: ""
@@ -66,8 +69,8 @@ controller_server:
 
             # Optimization
 
-            no_inner_iterations: 3 # 每次外循环迭代中调用的实际求解器迭代次数。
-            no_outer_iterations: 2 # 总优化迭代由 inner*outer 决定，低负载模式减少。
+            no_inner_iterations: 4  # 每次外循环迭代中调用的实际求解器迭代次数。
+            no_outer_iterations: 3 # 总优化迭代由 inner*outer 决定，低负载模式减少。
             optimization_activate: True
             optimization_verbose: False
             penalty_epsilon: 0.05 # 为硬约束近似的惩罚函数添加一个小的安全裕度

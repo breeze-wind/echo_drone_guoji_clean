@@ -7,11 +7,16 @@
 
 编辑 `robot_bring_up/config/coverage_mission.yaml` 的 `corner_a`、`corner_b`，填写 `map` 坐标系下
 搜索矩形的两个对角点，例如 `[x, y]`，这两项为空时任务不会启动。同时核对
-`door_start_xy`、`door_center_xy`、`door_end_xy` 分别填写门口起点、门洞中心和门后终点的
-`map` 系坐标；任务会先导航到起点，再用位置 setpoint 降到 `door_height`（默认 0.9 m），
-然后在穿门高度依次导航到中心和终点。穿门速度模式高度由
+`door_start_xy`、`door_end_xy` 分别填写门口起点和门后终点的 `map` 系坐标；任务会先导航到
+起点，再用位置 setpoint 降到 `door_height`（默认 0.9 m），切换门洞 TEB 参数后只发送
+一次门后终点的 Nav2 目标，不要求固定的门中心坐标。门内位置变化的障碍物由实时
+代价地图与 TEB 处理；如果通道实际堵死，导航会失败并悬停重试，不应靠缩小机体
+footprint 强行穿越。穿门速度模式高度由
 `flight_control/config/mavros_adapter.yaml` 的 `passing_door_height` 控制，必须与
-`door_height` 保持一致。`lane_spacing` 要依据实测地面视野留重叠；
+`door_height` 保持一致。固定门坐标还要求重启后的 Point-LIO 地图与建图时的坐标水平对齐；
+当前 `map→odom` 只有固定高度偏置，并不提供自动全局重定位，不能仅凭固定航点保证
+物理门的位置正确。飞前需用静态地图、点云与位姿验证对齐，偏移未解决时不要自动穿门。
+`lane_spacing` 要依据实测地面视野留重叠；
 `search_height` 必须与 `flight_control/config/mavros_adapter.yaml` 的
 `cruise_height` 一致；航线高度由 MAVROS adapter 的速度模式高度控制器维持。
 需要手动指定航点时，在 `custom_waypoints_xy` 填入 map 系平面坐标的扁平序列，例如
@@ -56,5 +61,6 @@ Point-LIO 的 `/robot/current_pose` 当前 `header.frame_id=odom`；任务接受
 导航到投递点、切换位置 setpoint 精确对准、下降到 `drop_height`，再向 `/electromagnet/set_state` 发送相应状态，并等待 `/electromagnet/status` 中的 MCU ACK。
 已成功投递过的视觉类别 ID 会视为重复靶，后续同类目标不再投递；不同类别各投一件，
 最多三类。完成一件后爬回巡航高度并继续剩余蛇形航点；完成三件或路线扫完后停止搜索，飞到
-`door_start_xy` 并在那里保持，不自动穿门。投递/导航失败时会请求 PX4 `AUTO.LAND`；
-飞控拒绝时飞手应立即接管。先无桨/系留验证电磁铁命令、坐标偏置、高度切换与门起点。
+`door_start_xy`、下降并连续导航到 `door_end_xy`。导航失败且位姿新鲜时先悬停，随后重试
+同一目标；位姿或飞行状态丢失等情况仍可能请求 PX4 `AUTO.LAND`。飞控拒绝时飞手应立即
+接管。先无桨/系留验证电磁铁命令、坐标偏置、高度切换与穿门任务状态。
