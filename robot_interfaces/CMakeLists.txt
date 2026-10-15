@@ -16,6 +16,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
         "msg/Receive/ImageLocation.msg"
         "msg/Perception/TargetDetection.msg"
         "msg/Perception/TargetDetectionArray.msg"
+        "msg/Navigation/CostmapRectEdit.msg"
         DEPENDENCIES std_msgs geometry_msgs
 )
 

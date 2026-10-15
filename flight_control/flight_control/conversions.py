@@ -32,20 +32,20 @@ def legacy_target_position(x, y, z, reference_z_offset):
     return legacy_position_to_mavros_enu(x, y, z - reference_z_offset)
 
 
-def legacy_nav_velocity(cmd_x, cmd_y, current_height, target_height, pid_height):
-    """保留旧 `/cmd_vel` 导航速度约定。"""
-    vx_ned = cmd_x
-    vy_ned = -cmd_y
-    vz_ned = -pid_height * (target_height - current_height)
-    return ned_xyz_to_mavros_enu(vx_ned, vy_ned, vz_ned)
+def body_velocity_to_map(cmd_x, cmd_y, yaw_map):
+    """把 Nav2 在机器人机体系下的水平速度转到 map 坐标系。"""
+    cos_yaw = math.cos(yaw_map)
+    sin_yaw = math.sin(yaw_map)
+    return (cos_yaw * cmd_x - sin_yaw * cmd_y,
+            sin_yaw * cmd_x + cos_yaw * cmd_y)
 
 
-def legacy_passing_door_velocity(cmd_x, cmd_y, current_height, target_height, pid_height):
-    """保留旧穿门阶段的特殊速度轴约定。"""
-    vx_ned = cmd_y
-    vy_ned = cmd_x
-    vz_ned = -pid_height * (target_height - current_height)
-    return ned_xyz_to_mavros_enu(vx_ned, vy_ned, vz_ned)
+def nav2_velocity_to_mavros_enu(cmd_x, cmd_y, yaw_map, coordinate_mode):
+    """把机体系 Nav2 XY 速度转成与 vision_pose 一致的 MAVROS ENU。"""
+    map_vx, map_vy = body_velocity_to_map(cmd_x, cmd_y, yaw_map)
+    if coordinate_mode == MAVROS_ENU_COORDINATE_MODE:
+        return map_vx, map_vy
+    return -map_vy, map_vx
 
 
 def mavros_enu_yaw_for_legacy_ned_yaw(yaw_ned):

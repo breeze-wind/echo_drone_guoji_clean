@@ -10,7 +10,7 @@ mavros_adapter:
     child_frame_id: "livox"
 
     # 高度和 PID 常量来自旧飞控节点，台架测试时用于对比 Point-LIO 高度和飞控高度。
-    cruise_height: 0.9
+    cruise_height: 1.4
     passing_door_height: 0.9
     height_feedback_z_offset: 0.39
     fcu_reference_z_offset: 0.08
@@ -21,15 +21,50 @@ mavros_adapter:
     heading_hold_kp: 0.8
     heading_hold_max_rate: 0.12
 
-    # 穿门速度模式沿用 MAVROS 速度话题，闭环追踪指定的 NED 航向。
-    enable_door_yaw: true
-    door_yaw_ned: 1.57
+    # 穿门只切换高度；机头继续保持进入 OFFBOARD 时的朝向，不强制转向门。
 
     # 调试状态发布周期，以及 setpoint 输出的输入过期门限。
     status_period: 1.0
     setpoint_republish_period: 0.1
     setpoint_stale_timeout: 1.0
     pose_stale_timeout: 1.0
+
+    # 近墙卡住时单次低速脱困。门内只按最近墙做侧向修正，不向后退。
+    # 门内不检查对侧墙，因此脉冲最多 2cm；仍须验证门内实际余量。
+    # 首次使用必须在无桨/系留条件下验证方向和代价地图对齐。
+    wall_escape_enabled: false
+    wall_escape_costmap_topic: "/local_costmap/costmap"
+    wall_escape_map_timeout: 0.7
+    wall_escape_stall_sec: 2.0
+    wall_escape_stall_distance: 0.04
+    wall_escape_min_cmd_speed: 0.08
+    # 45cm 方形机体的半对角线约 0.318m。
+    wall_escape_robot_radius: 0.32
+    wall_escape_trigger_clearance: 0.10
+    wall_escape_step: 0.10
+    wall_escape_min_gain: 0.05
+    wall_escape_speed: 0.08
+    wall_escape_pulse_sec: 1.0
+    wall_escape_door_speed: 0.04
+    wall_escape_door_pulse_sec: 0.5
+    wall_escape_door_max_pulses: 1
+    wall_escape_cooldown_sec: 5.0
+
+    # 实验性 TEB 轨迹位置跟踪：当前关闭，使用原来的 /cmd_vel 速度模式。
+    # 只在单独 dry-run 与开阔场地验证后再启用；启用时 Nav2 的 /local_plan
+    # 生成短前瞻位置目标，不再发送 /mavros/mavros/cmd_vel。
+    teb_position_follow_enabled: false
+    # Experimental combined position + velocity feed-forward mode. Publishes
+    # one PositionTarget on raw-local; mutually exclusive with pure mode above.
+    teb_position_velocity_follow_enabled: true
+    # 默认保守回退值；robot_bring_up/config/drone.yaml 提供实机 bringup 覆盖值。
+    teb_position_velocity_feedforward_max: 0.15
+    teb_local_plan_topic: "/local_plan"
+    teb_position_lookahead: 0.12
+    teb_position_target_speed: 0.15
+    teb_position_max_lead: 0.12
+    teb_position_max_cross_track: 0.08
+    teb_position_plan_timeout: 0.7
 
     # 可选 RC 解锁桥；设为 false 时 adapter 不会根据 RC 请求解锁。
     allow_rc_arming: true
@@ -55,6 +90,7 @@ mavros_adapter:
     # under /mavros/mavros, not the ROS1-style plugin sub-namespaces.
     mavros_position_setpoint_topic: "/mavros/mavros/local"
     mavros_velocity_setpoint_topic: "/mavros/mavros/cmd_vel"
+    mavros_raw_setpoint_topic: "/mavros/mavros/local"
 
     # 为 behavior_control 和 Point-LIO 保留的旧工作区接口。
     current_pose_topic: "/robot/current_pose"
@@ -62,6 +98,5 @@ mavros_adapter:
     cmd_vel_topic: "/cmd_vel"
     nav_state_topic: "/robot/nav_state"
     passing_door_state_topic: "/robot/passing_door_state"
-    turning_state_topic: "/robot/turning_state"
     arm_state_topic: "/robot/arm_state"
     status_topic: "/flight_control/status"

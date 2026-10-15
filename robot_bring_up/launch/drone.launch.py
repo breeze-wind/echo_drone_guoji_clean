@@ -109,6 +109,13 @@ def generate_launch_description():
         output="screen",
         condition=IfCondition(param_launch_rviz),
     )
+    manual_costmap_editor = Node(
+        package="robot_bring_up",
+        executable="manual_costmap_editor.py",
+        name="manual_costmap_editor",
+        output="screen",
+        condition=IfCondition(param_launch_rviz),
+    )
     map_to_odom = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -157,6 +164,7 @@ def generate_launch_description():
             ],
         ),
         navigation_launch,
+        manual_costmap_editor,
         rviz_node,
         obstacle_segmentation_launch
     ]

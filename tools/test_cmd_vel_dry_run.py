@@ -67,7 +67,6 @@ def main():
         Parameter('current_pose_topic', value=test_prefix + '/pose'),
         Parameter('nav_state_topic', value=test_prefix + '/nav_state'),
         Parameter('passing_door_state_topic', value=test_prefix + '/door_state'),
-        Parameter('turning_state_topic', value=test_prefix + '/turning_state'),
         Parameter('target_pose_topic', value=test_prefix + '/target_pose'),
         Parameter('arm_state_topic', value=test_prefix + '/arm_state'),
         Parameter('status_topic', value=test_prefix + '/status'),

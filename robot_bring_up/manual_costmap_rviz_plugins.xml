@@ -1,0 +1,5 @@
+<library path="manual_costmap_panel">
+  <class name="robot_bring_up/ManualCostmapPanel" type="robot_bring_up::ManualCostmapPanel" base_class_type="rviz_common::Panel">
+    <description>Undo the latest manually added costmap rectangle.</description>
+  </class>
+</library>

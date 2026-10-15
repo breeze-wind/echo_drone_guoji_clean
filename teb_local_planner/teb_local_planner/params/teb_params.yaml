@@ -29,8 +29,8 @@ controller_server:
       acc_lim_theta: 3.2
 
       footprint_model: # types: "point", "circular", "two_circles", "line", "polygon"
-        type: "circular"
-        radius: 0.17 # for type "circular"
+        type: "polygon"
+        vertices: "[ [0.10, 0.10], [-0.10, 0.10], [-0.10, -0.10], [0.10, -0.10] ]"
 
       # GoalTolerance
               

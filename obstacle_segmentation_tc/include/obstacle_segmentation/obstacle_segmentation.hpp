@@ -6,11 +6,14 @@
 #define OBSTACLE_SEGMENTATION_NODE_HPP
 
 #include <chrono>
+#include <deque>
 #include <memory>
 #include <string>
 #include <vector>
 #include <thread>
 #include <utility>
+#include <unordered_map>
+#include <cstdint>
 
 #include "rclcpp/rclcpp.hpp"
 
@@ -32,6 +35,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
 
 #include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64.hpp"
@@ -54,6 +58,18 @@ public:
     void ObstacleHeightCallback(const std_msgs::msg::Float64::SharedPtr msg);
 
 private:
+    using SteadyTime = std::chrono::steady_clock::time_point;
+    struct PendingCloud
+    {
+        sensor_msgs::msg::PointCloud2::SharedPtr msg;
+        SteadyTime queued_at;
+    };
+    struct ObstacleCellState
+    {
+        SteadyTime last_seen;
+        SteadyTime clear_until;
+    };
+
     // 创建滤波器对象
     pcl::PassThrough<pcl::PointXYZ> pass_through_filter_x_;
     pcl::PassThrough<pcl::PointXYZ> pass_through_filter_y_;
@@ -63,6 +79,7 @@ private:
 
     std::string input_cloud_topic_;
     std::string output_cloud_topic_;
+    std::string clearing_scan_topic_;
     std::string output_frame_;
 
     pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
@@ -76,6 +93,13 @@ private:
     float obstacle_y_max_;
     float obstacle_z_min_;
     float obstacle_z_max_;
+    double obstacle_above_sensor_max_m_;
+    double body_min_x_;
+    double body_max_x_;
+    double body_min_y_;
+    double body_max_y_;
+    double body_min_z_;
+    double body_max_z_;
     float obstacle_range_min_; // 障碍物点云范围(livox坐标系)
     float obstacle_range_max_;
     bool use_downsample_;
@@ -83,8 +107,30 @@ private:
     int cout;
     std::string base_frame_;
     double obstacle_height_;
+    double obstacle_cell_stale_timeout_sec_;
+    double clear_ray_max_range_;
+    double clear_grid_resolution_;
+    double tf_wait_timeout_sec_;
+    double clearing_max_cloud_age_sec_;
+    int max_pending_clouds_;
+    std::deque<PendingCloud> pending_clouds_;
+    rclcpp::TimerBase::SharedPtr pending_cloud_timer_;
+    int64_t last_enqueued_stamp_ns_{0};
+    int64_t last_processed_stamp_ns_{0};
+    uint64_t tf_timeout_drop_count_{0};
+    uint64_t queue_overflow_drop_count_{0};
+    uint64_t tf_resolved_count_{0};
+    double tf_wait_total_sec_{0.0};
+    double tf_wait_max_sec_{0.0};
+    SteadyTime last_queue_stats_time_{};
+    SteadyTime last_clearing_maintenance_time_{};
+    std::unordered_map<int64_t, ObstacleCellState> obstacle_cell_states_;
 
     int pcl_cnt;
+
+    void processPendingClouds();
+    void processCloud(const sensor_msgs::msg::PointCloud2::SharedPtr& msg,
+                      const geometry_msgs::msg::TransformStamped& cloud_to_map);
 
     sensor_msgs::msg::PointCloud2::SharedPtr output_cloud;
     
@@ -97,6 +143,7 @@ private:
     rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr obstacle_height_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr clear_state_sub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr output_cloud_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr clearing_cloud_pub_;
 };
 
 #endif //OBSTACLE_SEGMENTATION_NODE_HPP

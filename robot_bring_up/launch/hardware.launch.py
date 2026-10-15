@@ -54,16 +54,17 @@ def generate_launch_description():
     mavros_adapter_file = LaunchConfiguration('mavros_adapter_file')
     mavros_config_file = LaunchConfiguration('mavros_config_file')
     dry_run = LaunchConfiguration('dry_run')
-    dry_run_bool = ParameterValue(
-        PythonExpression(["'", dry_run, "'.lower() == 'true'"]),
-        value_type=bool,
-    )
+    # ParameterValue(bool) must receive the launch substitution itself. Wrapping
+    # it in PythonExpression first yields the non-empty string "False", which
+    # can then be coerced to True by bool("False").
+    dry_run_bool = ParameterValue(dry_run, value_type=bool)
 
     # 统一串口清单节点；dry-run 下可安全用于设备发现和配置校验。
     serial_manager_node = Node(
         package='robot_serial_manager',
         executable='robot_serial_manager_node',
         name='robot_serial_manager',
+        namespace='/',
         output='screen',
         parameters=[ports_file, {'dry_run': dry_run_bool}],
         condition=IfCondition(LaunchConfiguration('use_serial_manager')),
@@ -74,6 +75,7 @@ def generate_launch_description():
         package='servo_node',
         executable='servo_node',
         name='servo_node',
+        namespace='/',
         output='screen',
         parameters=[servo_file, {'dry_run': dry_run_bool}],
         respawn=True,
@@ -115,8 +117,19 @@ def generate_launch_description():
         package='flight_control',
         executable='mavros_adapter_node',
         name='mavros_adapter',
+        namespace='/',
         output='screen',
-        parameters=[mavros_adapter_file, {'dry_run': dry_run_bool}],
+        # Keep explicit launch overrides after the YAML file: on Foxy, later
+        # parameter sources override earlier values for the same parameter.
+        # drone.yaml also carries the adapter's bringup-owned TEB tuning so
+        # its velocity cap can be edited alongside the Nav2 TEB limits.
+        parameters=[mavros_adapter_file,
+                    os.path.join(bringup_share, 'config', 'drone.yaml'), {
+            'dry_run': dry_run_bool,
+            'teb_position_velocity_follow_enabled': ParameterValue(
+                LaunchConfiguration('teb_position_velocity_follow_enabled'),
+                value_type=bool),
+        }],
         respawn=True,
         condition=IfCondition(LaunchConfiguration('use_mavros')),
     )
@@ -156,6 +169,13 @@ def generate_launch_description():
                 'mavros_adapter.yaml'
             ]),
             description='MAVROS adapter 节点参数文件。',
+        ),
+        DeclareLaunchArgument(
+            'teb_position_velocity_follow_enabled',
+            default_value='true',
+            description=(
+                '让 MAVROS adapter 以单条 raw-local 消息发送 TEB 位置目标和速度前馈；'
+                '默认启用，可通过 teb_position_velocity_follow_enabled:=false 关闭。'),
         ),
         DeclareLaunchArgument(
             'mavros_config_file',

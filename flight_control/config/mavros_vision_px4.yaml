@@ -12,6 +12,7 @@
       - odometry
       - setpoint_position
       - setpoint_velocity
+      - setpoint_raw
       - rc_io
 
     startup_px4_usb_quirk: false

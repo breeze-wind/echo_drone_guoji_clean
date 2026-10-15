@@ -55,6 +55,17 @@ mavlink_control_node:
         cruise_height: 1.4
         passing_door_height: 0.6
 
+# MAVROS 适配器的 TEB 混合位置+速度控制调参，放在 bringup 配置中便于
+# 与 teb.yaml / teb_door.yaml 的 TEB 速度上限一起维护。
+# 注意：这是普通/穿门共用的水平速度模长上限，不会按当前模式自动切换；
+# /cmd_vel 仍受当前 TEB 的 max_vel_x/y 限制。当前设为 0.25 m/s，与穿门
+# TEB 的 max_vel_x/y=0.25 一致；普通 TEB 的 max_vel_x=0.45 会被此值进一步
+# 限制。若希望普通模式也达到更高速度，需要同步调整此值并验证飞控跟踪。
+mavros_adapter:
+    ros__parameters:
+        teb_position_velocity_feedforward_max: 0.65  # m/s；PositionTarget 水平速度前馈的向量模长限幅
+        teb_position_target_speed: 0.65  # m/s；位置目标沿 TEB 路径推进的最大速度，避免低于速度前馈限额
+
 ## PCD/map 路径统一放在 config/map_paths.yaml
 pcd2pgm_node:
     ros__parameters:
@@ -79,13 +90,20 @@ pcd2pgm_node:
 
 map_server:
     ros__parameters:
-        yaml_filename: "/home/echo/echo_drone_guoji_clean/robot_bring_up/maps/field_3512_map.yaml"
+        yaml_filename: "/home/echo/echo_drone_guoji_clean/robot_bring_up/maps/field_changdi_map.yaml"
 
 obstacle_segmentation_node:
     ros__parameters:
         input_cloud_topic: "/cloud_registered_body"
         output_cloud_topic: "/cloud_obstacle"
+        clearing_scan_topic: "/scan_obstacle_clear"
         output_frame: "map"
+        obstacle_cell_stale_timeout_sec: 1.0 # 某障碍格连续 1 秒未出现在障碍点云中即清除
+        clear_ray_max_range: 10.0
+        clear_grid_resolution: 0.05
+        tf_wait_timeout_sec: 3.0 # 点云先到时按原时间戳等 TF；超时丢帧，不用最新 TF 猜测
+        max_pending_clouds: 40 # 有界队列；约覆盖 4 秒的 10 Hz 点云
+        clearing_max_cloud_age_sec: 0.5 # 迟到点云仍可标记障碍，但不允许用旧扫描清理代价地图
         use_downsample: true # 是否使用体素滤波器
         leaf_size: 0.25 # 体素滤波器的体素大小
         point_num_for_normal: 10 # 用于计算法向量的点的数量
@@ -94,9 +112,19 @@ obstacle_segmentation_node:
         obstacle_x_max: 10.0 # 障碍物的x最大值(livox坐标系)
         obstacle_y_min: -10.0 # 障碍物的y最小值(livox坐标系)
         obstacle_y_max: 10.0 # 障碍物的y最大值(livox坐标系)
-        obstacle_z_min: -0.1 # 障碍物的z最小值(livox坐标系)
+        obstacle_z_min: 0.2 # map系离地高度下限；低于此值视为地面回波
+        obstacle_z_max: 2.0 # map系障碍物高度上限
+        obstacle_above_sensor_max_m: 0.4 # 高于雷达原点40cm及以上的回波不作为障碍物
         obstacle_range_min: 0.2 # 障碍物的最近距离(livox坐标系)
         obstacle_range_max: 10.0 # 障碍物的最远距离(livox坐标系)
+        # 在 Point-LIO 输入云的机体/IMU坐标系中过滤机身自身回波；只删除此紧凑 3D 盒内的点。
+        # 默认范围是初始估计，需用 /cloud_registered_body 的点云和机架尺寸核实后再收紧/放宽。
+        body_min_x: -0.30
+        body_max_x: 0.30
+        body_min_y: -0.25
+        body_max_y: 0.25
+        body_min_z: -0.25
+        body_max_z: 0.15
 
 bt_navigator:
     ros__parameters:
@@ -235,27 +263,27 @@ local_costmap:
             width: 5
             height: 5
             resolution: 0.05
-            footprint: "[ [0.225, 0.225], [-0.225, 0.225], [-0.225, -0.225], [0.225, -0.225] ]"
-            plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+            footprint: "[ [0.10, 0.10], [-0.10, 0.10], [-0.10, -0.10], [0.10, -0.10] ]"
+            plugins: ["static_layer", "obstacle_layer", "manual_costmap", "inflation_layer", "manual_costmap_override"]
             static_layer:
                 plugin: "nav2_costmap_2d::StaticLayer"
                 map_subscribe_transient_local: True
             obstacle_layer:
                 plugin: "nav2_costmap_2d::ObstacleLayer"
                 enabled: True
-                observation_sources: scan1 clear_cloud
+                observation_sources: scan1 clear_scan
                 min_obstacle_height: 0.0
-                max_obstacle_height: 1.0
+                max_obstacle_height: 2.0
                 scan1:
                     topic: "/cloud_obstacle"
                     # Points are published in map; raytracing must still start
                     # at the LiDAR/IMU origin, not at the map origin.
                     sensor_frame: "livox_raw"
                     expected_update_rate: 5.0
-                    max_obstacle_height: 1.0 # 障碍物最大高度
+                    max_obstacle_height: 2.0 # map系高度上限；相对机高的40cm过滤由点云分割节点负责
                     min_obstacle_height: 0.0 # 障碍物最小高度
-                    # This cloud contains only obstacle hits. It cannot clear a
-                    # disappeared obstacle when there is no new hit behind it.
+                    # Marking data is the obstacle cloud; stale cells are cleared
+                    # after the configured no-hit timeout via clear_scan.
                     clearing: False
                     marking: True
                     data_type: "PointCloud2"
@@ -263,23 +291,27 @@ local_costmap:
                     raytrace_min_range: 0.1
                     obstacle_max_range: 6.0
                     obstacle_min_range: 0.1
-                clear_cloud:
-                    topic: "/cloud_registered_body"
+                clear_scan:
+                    topic: "/scan_obstacle_clear"
                     sensor_frame: "livox_raw"
                     expected_update_rate: 5.0
-                    data_type: "PointCloud2"
+                    data_type: "LaserScan"
                     marking: False
                     clearing: True
-                    # Keep endpoints above/below the flight-height marking slab:
-                    # they provide free-space rays after an obstacle is removed.
                     min_obstacle_height: -10.0
                     max_obstacle_height: 10.0
                     raytrace_max_range: 6.0
                     raytrace_min_range: 0.1
+            manual_costmap:
+                plugin: "manual_costmap::ManualCostmapLayer"
+                enabled: True
             inflation_layer:
                 plugin: "nav2_costmap_2d::InflationLayer"
-                cost_scaling_factor: 5.0
-                inflation_radius: 0.5
+                cost_scaling_factor: 8.0
+                inflation_radius: 0.7
+            manual_costmap_override:
+                plugin: "manual_costmap::ManualCostmapLayer"
+                enabled: True
             always_send_full_costmap: True # RViz 需要稳定看到 /local_costmap/costmap；频率已降到 2Hz。
 
 global_costmap:
@@ -289,26 +321,26 @@ global_costmap:
             publish_frequency: 1.0
             global_frame: map
             robot_base_frame: livox
-            footprint: "[ [0.225, 0.225], [-0.225, 0.225], [-0.225, -0.225], [0.225, -0.225] ]"
+            footprint: "[ [0.10, 0.10], [-0.10, 0.10], [-0.10, -0.10], [0.10, -0.10] ]"
             resolution: 0.05
             track_unknown_space: true
-            plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+            plugins: ["static_layer", "obstacle_layer", "manual_costmap", "inflation_layer", "manual_costmap_override"]
             static_layer:
                 plugin: "nav2_costmap_2d::StaticLayer"
                 map_subscribe_transient_local: True
             obstacle_layer:
                 plugin: "nav2_costmap_2d::ObstacleLayer"
                 enabled: True
-                observation_sources: scan1 clear_cloud
+                observation_sources: scan1 clear_scan
                 min_obstacle_height: 0.0
-                max_obstacle_height: 1.0
+                max_obstacle_height: 2.0
                 scan1:
                     topic: "/cloud_obstacle"
                     # Points are published in map; raytracing must still start
                     # at the LiDAR/IMU origin, not at the map origin.
                     sensor_frame: "livox_raw"
                     expected_update_rate: 5.0
-                    max_obstacle_height: 1.0 # 障碍物最大高度
+                    max_obstacle_height: 2.0 # map系高度上限；相对机高的40cm过滤由点云分割节点负责
                     min_obstacle_height: 0.0 # 障碍物最小高度
                     clearing: False
                     marking: True
@@ -317,21 +349,27 @@ global_costmap:
                     raytrace_min_range: 0.1
                     obstacle_max_range: 10.0
                     obstacle_min_range: 0.1
-                clear_cloud:
-                    topic: "/cloud_registered_body"
+                clear_scan:
+                    topic: "/scan_obstacle_clear"
                     sensor_frame: "livox_raw"
                     expected_update_rate: 5.0
-                    data_type: "PointCloud2"
+                    data_type: "LaserScan"
                     marking: False
                     clearing: True
                     min_obstacle_height: -10.0
                     max_obstacle_height: 10.0
-                    raytrace_max_range: 10.0
+                    raytrace_max_range: 6.0
                     raytrace_min_range: 0.1
+            manual_costmap:
+                plugin: "manual_costmap::ManualCostmapLayer"
+                enabled: True
             inflation_layer:
                 plugin: "nav2_costmap_2d::InflationLayer"
                 cost_scaling_factor: 5.0
                 inflation_radius: 0.8
+            manual_costmap_override:
+                plugin: "manual_costmap::ManualCostmapLayer"
+                enabled: True
             always_send_full_costmap: True # RViz 需要稳定看到 /global_costmap/costmap；频率已降到 1Hz。
 
 planner_server:

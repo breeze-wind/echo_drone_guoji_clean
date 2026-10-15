@@ -56,6 +56,9 @@
 
 #include <memory>
 #include <limits>
+#include <string>
+#include <exception>
+#include <rclcpp/rclcpp.hpp>
 
 namespace teb_local_planner
 {
@@ -1269,7 +1272,16 @@ bool TebOptimalPlanner::isTrajectoryFeasible(dwb_critics::ObstacleFootprintCriti
   for (int i=0; i <= look_ahead_idx; ++i)
   {
     teb().Pose(i).toPoseMsg(pose2d);
-    if (!isPoseValid(pose2d, costmap_model, footprint_spec)){
+    double score = 0.0;
+    std::string error;
+    if (!isPoseValid(pose2d, costmap_model, footprint_spec, &score, &error)){
+      if (node_) {
+        RCLCPP_WARN_THROTTLE(
+          node_->get_logger(), *node_->get_clock(), 1000,
+          "TEB feasibility rejected trajectory pose[%d/%d]: x=%.3f y=%.3f yaw=%.3f rad, footprint_score=%.3f (%s)",
+          i, look_ahead_idx, pose2d.x, pose2d.y, pose2d.theta, score,
+          error.empty() ? "footprint collides with costmap or pose is outside/unknown" : error.c_str());
+      }
       if (visualization_)
       {
         visualization_->publishInfeasibleRobotPose(teb().Pose(i), *cfg_->robot_model);
@@ -1296,7 +1308,17 @@ bool TebOptimalPlanner::isTrajectoryFeasible(dwb_critics::ObstacleFootprintCriti
                                                            delta_rot / (n_additional_samples + 1.0));
           intermediate_pose.toPoseMsg(pose2d);
 
-          if (!isPoseValid(pose2d, costmap_model, footprint_spec)){
+          double score = 0.0;
+          std::string error;
+          if (!isPoseValid(pose2d, costmap_model, footprint_spec, &score, &error)){
+            if (node_) {
+              RCLCPP_WARN_THROTTLE(
+                node_->get_logger(), *node_->get_clock(), 1000,
+                "TEB feasibility rejected interpolated pose between[%d] and [%d] sample[%d/%d]: x=%.3f y=%.3f yaw=%.3f rad, footprint_score=%.3f (%s)",
+                i, i + 1, step + 1, n_additional_samples, pose2d.x, pose2d.y,
+                pose2d.theta, score,
+                error.empty() ? "footprint collides with costmap or pose is outside/unknown" : error.c_str());
+            }
             if (visualization_)
             {
               visualization_->publishInfeasibleRobotPose(intermediate_pose, *cfg_->robot_model);
@@ -1311,13 +1333,30 @@ bool TebOptimalPlanner::isTrajectoryFeasible(dwb_critics::ObstacleFootprintCriti
 }
 
 bool TebOptimalPlanner::isPoseValid(geometry_msgs::msg::Pose2D pose2d, dwb_critics::ObstacleFootprintCritic* costmap_model,
-                           const std::vector<geometry_msgs::msg::Point>& footprint_spec)
+                           const std::vector<geometry_msgs::msg::Point>& footprint_spec,
+                           double* score, std::string* error)
 {
   try {
-    if ( costmap_model->scorePose(pose2d, dwb_critics::getOrientedFootprint(pose2d, footprint_spec)) < 0 ) {
+    const double footprint_score = costmap_model->scorePose(
+      pose2d, dwb_critics::getOrientedFootprint(pose2d, footprint_spec));
+    if (score) {
+      *score = footprint_score;
+    }
+    if (footprint_score < 0) {
+      if (error) {
+        *error = "footprint score is negative (collision, unknown cell, or costmap boundary)";
+      }
       return false;
     }
+  } catch (const std::exception & exception) {
+    if (error) {
+      *error = exception.what();
+    }
+    return false;
   } catch (...) {
+    if (error) {
+      *error = "unknown exception while scoring footprint";
+    }
     return false;
   }
   return true;

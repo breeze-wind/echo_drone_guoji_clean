@@ -1,0 +1,7 @@
+<library path="manual_costmap_layer">
+  <class name="manual_costmap::ManualCostmapLayer"
+         type="manual_costmap::ManualCostmapLayer"
+         base_class_type="nav2_costmap_2d::Layer">
+    <description>Persistent manually painted rectangular obstacle/free overrides.</description>
+  </class>
+</library>

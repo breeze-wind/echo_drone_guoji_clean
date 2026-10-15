@@ -2,7 +2,7 @@
 # robot_bring_up 包目录（源码树或 install share）解析。
 map_paths:
   pcd_file: ""                    # Point-LIO 导出的/合并后的 .pcd 文件完整路径
-  merged_pcd_dir: "/home/echo/echo_drone_guoji_clean/Point-LIO/PCD/3512/"              # merge_pcd 输入目录；为空时不使用合并流程
+  merged_pcd_dir: "/home/echo/echo_drone_guoji_clean/Point-LIO/PCD/changdi/"              # merge_pcd 输入目录；为空时不使用合并流程
   map_output_dir: "/home/echo/echo_drone_guoji_clean/robot_bring_up/maps" # PNG/YAML 输出目录
-  map_name: "field_3512_map"            # 输出 field_map.png / field_map.yaml
-  nav_map_yaml: "/home/echo/echo_drone_guoji_clean/robot_bring_up/maps/field_3512_map.yaml"   # Nav2 当前加载的 YAML；相对 robot_bring_up/maps
+  map_name: "field_changdi_map"            # 输出 field_map.png / field_map.yaml
+  nav_map_yaml: "/home/echo/echo_drone_guoji_clean/robot_bring_up/maps/blank_20m.yaml"   # Nav2 当前加载的 YAML；相对 robot_bring_up/maps

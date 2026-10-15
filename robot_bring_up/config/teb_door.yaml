@@ -2,12 +2,14 @@
 # 仅覆盖动态调参阶段需要更保守的平移速度、加速度及路径跟随权重；
 # 普通飞行参数仍由 teb.yaml 管理，障碍物与机体 footprint 沿用普通配置。
 FollowPath:
+  # 混合位置+速度模式还会受 drone.yaml 中适配器速度前馈向量限幅的二次约束。
   max_vel_x: 0.25
   max_vel_y: 0.25
   max_vel_x_backwards: 0.15
   acc_lim_x: 0.20
   acc_lim_y: 0.20
-  # 80 cm door, 45 cm footprint: use a 10 cm optimization clearance per side.
+  # 80 cm doorway, 20 cm square footprint: geometric side clearance is 30 cm;
+  # retain a 10 cm TEB optimization clearance as an additional margin.
   # The costmap footprint collision check remains active.
   min_obstacle_dist: 0.10
   weight_optimaltime: 100.0

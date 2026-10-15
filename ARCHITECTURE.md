@@ -102,8 +102,7 @@ D435 / USB 相机 ──► /robot/image_location, /robot/usb_camera ──► b
 | `/cmd_vel` | `Twist` | TEB → adapter | 速度控制 |
 | `/robot/target_pose` | `TransformStamped` | 决策 → adapter | 位置设定点 |
 | `/robot/nav_state` | `Bool` | 决策 → adapter | true 速度 / false 位置 |
-| `/robot/passing_door_state` | `Bool` | 决策 → adapter | 穿门标志 |
-| `/robot/turning_state` | `Bool` | 决策 → adapter | 转向标志 |
+| `/robot/passing_door_state` | `Bool` | 决策 → adapter | 穿门高度标志，不改变机头朝向 |
 | `/robot/obstacle_height` | `Float64` | 决策 → 分割 | 障碍高度上限 |
 | `/robot/clear_state` | `Bool` | 决策 → 感知/costmap | 清障碍 |
 
@@ -180,9 +179,10 @@ D435 / USB 相机 ──► /robot/image_location, /robot/usb_camera ──► b
 - MID-360 点云约 10 Hz；若实测 `/Odometry` 更低，TEB/costmap 频率必须相应降低。
 - behavior_control 在导航状态每 100 ms 重发一次 `NavigateToPose`，对 TEB 不友好；
   定点测试建议先用 RViz 发 `/goal_pose` 验证 Nav2。
-- 穿门速度模式由 adapter 通过 `/mavros/setpoint_raw/local` 同时下发速度和绝对 yaw
-  （`enable_door_yaw` / `door_yaw_ned`），需确认 MAVROS `setpoint_raw` 插件已加载。
-- adapter 的 `cruise_height` 已与 behavior 对齐为 1.0，修改任一处都要同步。
+- 普通导航和穿门均由 adapter 将 Nav2 机体系 `/cmd_vel` 按当前姿态转到
+  MAVROS 局部坐标系，经 `/mavros/mavros/cmd_vel` 输出；穿门只切换高度，
+  机头保持进入 OFFBOARD 时的朝向。
+- 独立 coverage 任务的 `search_height` 要与 adapter 的 `cruise_height` 对齐。
 - 高度偏置分散：behavior `+0.39`、adapter `+0.31/+0.08`、obstacle `+0.27`；
   修改任一处都要重新标定。
 - Point-LIO 先验地图路径、map_server 地图路径、串口逻辑名都需要按比赛机环境替换。

@@ -15,11 +15,13 @@ setup(
                 'config/mavros_adapter.yaml',
                 'config/mavros_pluginlists.yaml',
                 'config/mavros_vision_px4.yaml',
+                'config/velocity_monitor.yaml',
             ]),
         ('share/' + package_name + '/launch',
             [
                 'launch/mavros_adapter.launch.py',
                 'launch/mavros_state.launch.py',
+                'launch/velocity_monitor.launch.py',
             ]),
     ],
     install_requires=['setuptools'],
@@ -32,6 +34,7 @@ setup(
     entry_points={
         'console_scripts': [
             'mavros_adapter_node = flight_control.mavros_adapter_node:main',
+            'velocity_monitor_node = flight_control.velocity_monitor_node:main',
         ],
     },
 )

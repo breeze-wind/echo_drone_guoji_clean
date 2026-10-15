@@ -4,19 +4,17 @@ controller_server:
             plugin: teb_local_planner::TebLocalPlannerROS
 
             teb_autosize: 1.0
-            dt_ref: 0.25 # 所需的轨迹时间分辨率；增大可减少TEB轨迹点数量，降低CPU。
-            dt_hysteresis: 0.05 # 根据当前时间分辨率自动调整大小的滞后，建议使用dt_ref的 10%~20%。
+            dt_ref: 0.20 # 所需的轨迹时间分辨率；增大可减少TEB轨迹点数量，降低CPU。
+            dt_hysteresis: 0.03 # 根据当前时间分辨率自动调整大小的滞后，建议使用dt_ref的 10%~20%。
             max_samples: 80
             min_samples: 3 # 最小采样数,大于2
             global_plan_overwrite_orientation: True # 覆盖全局规划器提供的局部子目标的方向（因为它们通常仅提供 2D 路径）
             allow_init_with_backwards_motion: False
-            max_global_plan_lookahead_dist: 1.0 # 降低局部优化长度，减少TEB计算量。
-            #global_plan_viapoint_sep: -0.1 # 如果为正，则从全局计划中提取途经点（路径跟踪模式）。该值确定参考路径的分辨率（沿全局规划的每两个连续经由点之间的最小间隔，如果为负值：禁用）。
-            global_plan_viapoint_sep: 0.4  # 每约 0.4 m 从全局路径取一个途经点；负数表示关闭
-            #weight_viapoint: 50.0          # TEB 贴近这些途经点的力度
+            max_global_plan_lookahead_dist: 1.5 # 降低局部优化长度，减少TEB计算量。
+            global_plan_viapoint_sep: 0.5 # 如果为正，则从全局计划中提取途经点（路径跟踪模式）。该值确定参考路径的分辨率（沿全局规划的每两个连续经由点之间的最小间隔，如果为负值：禁用）。
 
             global_plan_prune_distance: 0.2 #3.17
-            # via_points_ordered: TDOD
+            via_points_ordered: True
             force_reinit_new_goal_dist: 1.0 # 如果之前的目标更新后的间隔超过指定值（以米为单位），则重新初始化轨迹（跳过热启动）
             force_reinit_new_goal_angular: 0.78 #3.17
             min_resolution_collision_check_angular: 3.14159265 #3.17
@@ -28,12 +26,13 @@ controller_server:
 
             # Robot
 
+            # 混合位置+速度模式还会受 drone.yaml 中 mavros_adapter.teb_position_velocity_feedforward_max 的向量限幅。
             max_vel_x: 0.65 # 机器人最大x轴速度m/s
-            max_vel_y: 0.65 # 机器人最大y轴速度m/s
-            max_vel_x_backwards: 1.0 # 机器人最大x轴后退速度m/s
+            max_vel_y: 0.45 # 机器人最大y轴速度m/s
+            max_vel_x_backwards: 0.10 # 机器人最大x轴后退速度m/s
             max_vel_theta: 0.12 # 机器人最大角速度rad/s
-            acc_lim_x: 0.55 # 机器人最大x轴平移加速度m/s^2
-            acc_lim_y: 0.55 # 机器人最大y轴平移加速度m/s^2
+            acc_lim_x: 0.25 # 机器人最大x轴平移加速度m/s^2
+            acc_lim_y: 0.25 # 机器人最大y轴平移加速度m/s^2
             acc_lim_theta: 0.15 # 机器人最大角加速度rad/s^2
 
             min_turning_radius: 0.0 # 机器人最小转弯半径
@@ -41,58 +40,58 @@ controller_server:
             is_footprint_dynamic: False
             footprint_model: # types: "point", "circular", "two_circles", "line", "polygon"
                 type: "polygon"
-                vertices: "[ [0.225, 0.225], [-0.225, 0.225], [-0.225, -0.225], [0.225, -0.225] ]"
+                vertices: "[ [0.10, 0.10], [-0.10, 0.10], [-0.10, -0.10], [0.10, -0.10] ]"
                # radius: 0.4 # for type "circular"
 
-
             # GoalTolerance
-
             free_goal_vel: False # 去除目标速度约束，使机器人能够以最大速度到达目标
 
             # Obstacles
 
-            min_obstacle_dist: 0.10 # 机器人与障碍物之间的最小距离（米）；穿门配置保持一致。
-            inflation_dist: 0.8 # 非零惩罚成本的障碍物周围的缓冲区（应大于min_obstacle_dist才能生效）。3.17
+            min_obstacle_dist: 0.05 # 普通飞行时机身与障碍的期望最小距离；穿门配置单独设置为10cm。
+            inflation_dist: 1.0 # 非零惩罚成本的障碍物周围的缓冲区（应大于min_obstacle_dist才能生效）。3.17
             include_costmap_obstacles: True # 指定是否应考虑本地成本图的障碍。每个被标记为障碍物的单元格都被视为点障碍物。因此，不要RM选择非常小的代价图分辨率，因为它会增加计算时间。
-            costmap_obstacles_behind_robot_dist: 1.0 # 限制机器人后方规划时考虑的占用的本地成本图障碍（指定距离以米为单位）。
-            obstacle_poses_affected: 8 # 每个障碍物影响的轨迹位姿数量，降低可减小优化规模。
+            costmap_obstacles_behind_robot_dist: 0.0 # 限制机器人后方规划时考虑的占用的本地成本图障碍（指定距离以米为单位）。
+            obstacle_poses_affected: 5 # 每个障碍物影响的轨迹位姿数量，降低可减小优化规模。
             legacy_obstacle_association: false # 如果为 true，则使用旧的障碍物关联方法，该方法将障碍物与轨迹上最近的姿势相关联。如果为 false，则使用新的障碍物关联方法，该方法将障碍物与轨迹上最近的姿势相关联，并考虑其他邻居。
-            obstacle_association_force_inclusion_factor: 20.0 # 非传统障碍物关联策略尝试在优化过程中仅将相关障碍物与离散化轨迹连接起来。但指定距离内的所有障碍物都必须包含在内（作为min_obstacle_dist的倍数）。例如，选择 2.0 是为了在 2.0* min_obstacle_dist 的半径内强制考虑障碍物。 [仅当参数legacy_obstacle_association为false时才使用此参数]
-            obstacle_association_cutoff_factor: 100.0 # 但超出[value]* min_obstacle_dist的倍数时，所有障碍物在优化期间都会被忽略。首先处理参数barrier_association_force_inclusion_factor 。 [仅当参数legacy_obstacle_association为false时才使用此参数]
-
+            obstacle_association_force_inclusion_factor: 10.0 # 非传统障碍物关联策略尝试在优化过程中仅将相关障碍物与离散化轨迹连接起来。但指定距离内的所有障碍物都必须包含在内（作为min_obstacle_dist的倍数）。例如，选择 2.0 是为了在 2.0* min_obstacle_dist 的半径内强制考虑障碍物。 [仅当参数legacy_obstacle_association为false时才使用此参数]
+            obstacle_association_cutoff_factor: 50.0 # 但超出[value]* min_obstacle_dist的倍数时，所有障碍物在优化期间都会被忽略。首先处理参数barrier_association_force_inclusion_factor 。 [仅当参数legacy_obstacle_association为false时才使用此参数]
             dynamic_obstacle_inflation_dist: 1.1
             include_dynamic_obstacles: False # 动态障碍预测计算量较大，低负载模式关闭。
 
-            costmap_converter_plugin: ""
-            costmap_converter_spin_thread: False
-            costmap_converter_rate: 2.0
+            # Cluster lethal costmap cells into polygon obstacles instead of
+            # passing every occupied cell to TEB as an individual point.
+            # The converter runs independently and tracks the 5 Hz local costmap.
+            costmap_converter_plugin: "costmap_converter::CostmapToPolygonsDBSMCCH"
+            costmap_converter_spin_thread: True
+            costmap_converter_rate: 5
 
             # Optimization
 
-            no_inner_iterations: 4  # 每次外循环迭代中调用的实际求解器迭代次数。
-            no_outer_iterations: 3 # 总优化迭代由 inner*outer 决定，低负载模式减少。
+            no_inner_iterations: 3  # 每次外循环迭代中调用的实际求解器迭代次数。
+            no_outer_iterations: 2 # 总优化迭代由 inner*outer 决定，低负载模式减少。
             optimization_activate: True
             optimization_verbose: False
             penalty_epsilon: 0.05 # 为硬约束近似的惩罚函数添加一个小的安全裕度
             obstacle_cost_exponent: 2.0 #3.17
-            weight_max_vel_x: 6.0 # 满足最大允许平移速度的优化权重 2.28
-            weight_max_vel_y: 5.5 # 满足最大允许平移速度的优化权重 3.17
+            weight_max_vel_x: 8.0 # 满足最大允许平移速度的优化权重 2.28
+            weight_max_vel_y: 6.0 # 满足最大允许平移速度的优化权重 3.17
             weight_max_vel_theta: 0.8 # 满足最大允许角速度的优化权重
-            weight_acc_lim_x: 3.0 # 满足最大允许平移加速度的优化权重
-            weight_acc_lim_y: 3.0 # 满足最大允许平移加速度的优化权重
+            weight_acc_lim_x: 2.0 # 满足最大允许平移加速度的优化权重
+            weight_acc_lim_y: 2.0 # 满足最大允许平移加速度的优化权重
             weight_acc_lim_theta: 0.5 # 满足最大允许角加速度的优化权重
             weight_kinematics_nh: 0.01 # 满足非完整运动学约束（不平移，原地旋转）的优化权重，该参数必须很高 3.17
             weight_kinematics_forward_drive: 0.0 # 用于迫使机器人仅选择前进方向（正平移速度）的优化权重。较小的权重（例如 1.0）仍然允许向后行驶。 1000左右的值几乎可以防止向后行驶（但不能保证）。
-            weight_optimaltime: 500.0 # must be > 0 用于收缩相对于转换/执行时间的轨迹的优化权重 2.28//fjq 500
-            weight_shortest_path: 10.0
-            weight_obstacle: 1000.0 # 用于满足与障碍物距离的权重 2.28
-            weight_inflation: 2.0 # 膨胀区域的权重 应该很小
+            weight_optimaltime: 1000.0 # must be > 0 用于收缩相对于转换/执行时间的轨迹的优化权重 2.28//fjq 500
+            weight_shortest_path: 90.0
+            weight_obstacle: 4800.0 # 用于满足与障碍物距离的权重 2.28
+            weight_inflation: 19.0 # 膨胀区域的权重 应该很小
             weight_dynamic_obstacle: 10.0 # not in use yet
             weight_dynamic_obstacle_inflation: 0.2
-            weight_viapoint: 1000.0 # 用于最小化到过点（或参考路径）的距离的优化权重。
+            weight_viapoint: 1000.0 # 用于最小化到全局路径途经点距离的优化权重。
             weight_adapt_factor: 2.0 # 一些特殊权重（当前为weight_obstacle）在每次外部TEB迭代中都会按此因子重复缩放（weight_new =weight_old*factor）。迭代地增加权重而不是预先设置一个巨大的值会导致底层优化问题的更好的数值条件。
             # weight_prefer_rotdir: TODO
-            # weight_velocity_obstacle_ratio: TODO
+            #weight_velocity_obstacle_ratio: 20.0
 
             # Homotopy Class Planner
 

@@ -1078,14 +1078,6 @@ void TebLocalPlannerROS::customObstacleCB(const costmap_converter_msgs::msg::Obs
 void TebLocalPlannerROS::customViaPointsCB(const nav_msgs::msg::Path::ConstSharedPtr via_points_msg)
 {
   RCLCPP_INFO_ONCE(logger_, "Via-points received. This message is printed once.");
-  if (cfg_->trajectory.global_plan_viapoint_sep > 0)
-  {
-    RCLCPP_INFO(logger_, "Via-points are already obtained from the global plan (global_plan_viapoint_sep>0)."
-             "Ignoring custom via-points.");
-    custom_via_points_active_ = false;
-    return;
-  }
-
   std::lock_guard<std::mutex> l(via_point_mutex_);
   via_points_.clear();
   for (const geometry_msgs::msg::PoseStamped& pose : via_points_msg->poses)
@@ -1093,6 +1085,10 @@ void TebLocalPlannerROS::customViaPointsCB(const nav_msgs::msg::Path::ConstShare
     via_points_.emplace_back(pose.pose.position.x, pose.pose.position.y);
   }
   custom_via_points_active_ = !via_points_.empty();
+  if (custom_via_points_active_ && cfg_->trajectory.global_plan_viapoint_sep > 0)
+  {
+    RCLCPP_DEBUG(logger_, "Using mission custom via-points instead of sampled global-plan via-points.");
+  }
 }
 
 void TebLocalPlannerROS::activate() {

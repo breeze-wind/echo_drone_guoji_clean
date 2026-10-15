@@ -1,7 +1,7 @@
 """Guard against OFFBOARD setpoint gaps across mission phases."""
 
 import time
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from coverage_mission.coverage_mission_node import CoverageMissionNode
 
@@ -51,3 +51,37 @@ def test_search_repeats_navigation_mode_even_without_a_new_goal():
     CoverageMissionNode._tick(mission)
 
     assert mission.nav_state_pub.publish.call_args.args[0].data is True
+
+
+def test_landing_approach_repeats_navigation_mode():
+    mission = _mission_in(CoverageMissionNode.DOOR_LANDING_APPROACH)
+    mission.nav_retry_at = time.monotonic() + 10.0
+
+    CoverageMissionNode._tick(mission)
+
+    assert mission.nav_state_pub.publish.call_args.args[0].data is True
+
+
+def test_door_done_keeps_refreshing_exit_pose():
+    mission = _mission_in(CoverageMissionNode.DOOR_DONE)
+    mission.door_end = (3.5, 0.3)
+    mission.door_height = 0.9
+
+    CoverageMissionNode._tick(mission)
+    CoverageMissionNode._tick(mission)
+
+    assert mission._publish_position_target.call_count == 2
+    mission._publish_position_target.assert_called_with(3.5, 0.3, 0.9)
+    assert mission.nav_state_pub.publish.call_args.args[0].data is False
+
+
+def test_door_done_does_not_refresh_with_stale_pose():
+    mission = _mission_in(CoverageMissionNode.DOOR_DONE)
+    mission.current_pose_time = time.monotonic() - 2.0
+    mission._begin_landing = Mock()
+
+    with patch.object(CoverageMissionNode, 'get_logger', return_value=Mock()):
+        CoverageMissionNode._tick(mission)
+
+    mission._publish_position_target.assert_not_called()
+    mission._begin_landing.assert_called_once()

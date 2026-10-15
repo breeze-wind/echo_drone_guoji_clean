@@ -527,7 +527,8 @@ public:
    * @return \c true, if the robot pose is valid, \c false otherwise.
    */
   virtual bool isPoseValid(geometry_msgs::msg::Pose2D pose2d, dwb_critics::ObstacleFootprintCritic* costmap_model,
-                           const std::vector<geometry_msgs::msg::Point>& footprint_spec);
+                           const std::vector<geometry_msgs::msg::Point>& footprint_spec,
+                           double* score = nullptr, std::string* error = nullptr);
 
   //@}
   

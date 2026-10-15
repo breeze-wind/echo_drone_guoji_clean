@@ -1,0 +1,14 @@
+velocity_monitor:
+  ros__parameters:
+    # 只读：不发布 setpoint，不调用解锁/模式服务。
+    pose_topic: /robot/current_pose
+    cmd_vel_topic: /cmd_vel
+    velocity_setpoint_topic: /mavros/mavros/cmd_vel
+    position_setpoint_topic: /mavros/mavros/local
+    report_topic: /flight_control/velocity_comparison
+    coordinate_mode: legacy_ned_compatible
+    expected_pose_frame: odom
+    velocity_window_sec: 0.6
+    pose_timeout_sec: 0.7
+    command_timeout_sec: 0.7
+    print_period_sec: 1.0

@@ -38,6 +38,7 @@ usage() {
   hardware-real     启动串口管理、舵机节点、MAVROS 和 MAVROS adapter。
   mavros-real       启动串口管理、MAVROS 和 MAVROS adapter，不启动舵机。
   mavros-vision     兼容旧工作区命名；等同 mavros-real，走 MAVROS vision_pose。
+  speed-check       只读比较 TEB 期望速度、适配器 setpoint 与 Point-LIO 实测速度。
   servo-real        只启动真实舵机节点，默认设备 /dev/stm32_servo。
   magnet            electromagnet-real 的短别名；默认设备 /dev/ttyUSB0。
 
@@ -80,6 +81,7 @@ usage() {
   ./run_echo_drone.sh full
   ./run_echo_drone.sh full2
   ./run_echo_drone.sh nav
+  ./run_echo_drone.sh speed-check
   ./run_echo_drone.sh hardware-dry
   ./run_echo_drone.sh livox
   ./run_echo_drone.sh pointlio rviz:=false
@@ -326,6 +328,11 @@ case "$MODE" in
   adapter-dry|mavros-adapter-dry)
     source_env
     run_launch flight_control mavros_adapter.launch.py "${@:2}"
+    ;;
+
+  speed-check)
+    source_env
+    run_launch flight_control velocity_monitor.launch.py "${@:2}"
     ;;
 
   # 真实硬件入口拆开，先确认飞控心跳，再启用 adapter 或舵机命令链路。
