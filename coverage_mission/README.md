@@ -31,6 +31,7 @@ footprint 强行穿越。穿门速度模式高度由
 手动航点和搜索区域都应在 Nav2 地图可行驶区域内。
 `drop_offsets_xy` 是三个货物相对靶心的 map 平面偏置（每两个数一组），
 `drop_commands` 使用与控制 UI 相同的一基状态号。状态 1/2/3/4 分别表示 3/2/1/0 个实体磁铁吸合；任务默认投三件，因此使用 `[2, 3, 4]`，依次释放三件货物。请先确认货物与电磁铁通道的物理对应顺序。
+`record_targets_during_search: true` 会在搜索时只稳定确认并记录靶标，不悬停或中断航线；航线飞完后按红十字、装甲目标（车/坦克）、桥、堡垒、帐篷的优先级导航至记录点补投，最多投完 `max_deliveries` 件。设为 `false` 则保持发现目标后立即投递的旧流程。`deliver_red_cross` 单独控制红十字是否允许投递；关闭时仍可记录红十字，但补投阶段跳过它。若路线和可投记录均已处理完仍有货物，任务会在当前位置保持 setpoint、发送 `drop_commands` 最后一档（默认 state 4 全释放），等待 MCU ACK 与停留时间后才进入串门；真实投递启用时必须有新 ACK，否则安全中止。
 相机/雷达/机体的静态 TF 集中在 `robot_bring_up/config/static_frames.yaml`，平移单位为米，
 旋转为 ROS 四元数 `[x, y, z, w]`；相机内参、模型路径和检测参数在
 `target_perception/config/target_perception.yaml`。修改这些源配置后重新构建相关包并 source。
@@ -63,10 +64,9 @@ Point-LIO 的 `/robot/current_pose` 当前 `header.frame_id=odom`；任务接受
 任务运行期间每秒打印一次当前阶段；搜索时包含当前航点序号和坐标，发现靶标/投递时包含
 靶标类别、坐标和投递序号，返回阶段持续打印穿门起点坐标。
 如将 `auto_start` 设为 `false`，则需要手动调用 `/coverage_mission/start` Trigger。
-搜索中连续确认靶标后，按当前投递序号使用对应偏置，
+搜索中连续确认靶标后（记录模式关闭时），按当前投递序号使用对应偏置，
 导航到投递点、切换位置 setpoint 精确对准、下降到 `drop_height`，再向 `/electromagnet/set_state` 发送相应状态，并等待 `/electromagnet/status` 中的 MCU ACK。
-已成功投递过的视觉类别 ID 会视为重复靶，后续同类目标不再投递；不同类别各投一件，
-最多三类。完成一件后爬回巡航高度并继续剩余蛇形航点；完成三件或路线扫完后停止搜索，飞到
+已成功投递位置附近的重复检测会被忽略（按 `delivered_target_duplicate_radius` 判断，而非按类别 ID）；不同位置的同类别目标仍可投递。完成一件后爬回巡航高度并继续剩余蛇形航点；完成三件或路线扫完后按配置处理剩余目标/货物，再飞到
 `door_start_xy`、下降并连续导航到 `door_end_xy`。导航失败且位姿新鲜时先悬停，随后重试
 同一目标；正常任务完成时先到达 `landing_xy` 再请求 PX4 `AUTO.LAND`，位姿或飞行状态丢失等
 异常仍可能直接请求 `AUTO.LAND`。飞控拒绝时飞手应立即

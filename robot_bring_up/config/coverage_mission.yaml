@@ -1,16 +1,15 @@
 coverage_mission_node:
   ros__parameters:
     # Search rectangle corners in map frame; mandatory before mission startup.
-    corner_a: [0.0,-2.39]
-    corner_b: [9.0,3.61]
+    corner_a: [5.42,2.74]
+    corner_b: [-0.081,-3.58]
     # At 1 m height the configured camera sees about 1.28 x 0.96 m on ground.
     # Start with overlap on the short side; verify using the real camera/FOV.
-    lane_spacing: 0.7
+    lane_spacing: 1.0
     # Optional manual route in map-frame XY, flattened as [x1, y1, x2, y2, ...].
     # When non-empty it replaces the generated serpentine route; each point uses
     # search_height and keeps the initial aircraft heading.
-    custom_waypoints_xy: []
-    # Must match flight_control/mavros_adapter.yaml cruise_height in velocity mode.
+    custom_waypoints_xy:  []    # [6.0,0.0] # Must match flight_control/mavros_adapter.yaml cruise_height in velocity mode.
     search_height: 1.4
     lane_axis: auto
     frame_id: map
@@ -45,6 +44,11 @@ coverage_mission_node:
     nav_retry_delay_sec: 1.0
     # Pause at the current pose for this long when a red cross is first detected.
     red_cross_hold_sec: 2.0
+    # true：搜索期间只稳定确认并记录靶标，继续飞完航线；航线结束后按优先级逐个补投。
+    # false：发现靶标后立即中断搜索并前往投递。
+    record_targets_during_search: false
+    # 记录/直投时是否允许把红十字作为投递目标；false 时仍记录，但补投时跳过。
+    deliver_red_cross: true
     # Three distinct targets each receive one cargo; then proceed to this door start.
     max_deliveries: 3
     # Flattened map-frame XY pairs: cargo 1, cargo 2, cargo 3.
@@ -52,18 +56,18 @@ coverage_mission_node:
     # Public UI/ROS states: 2 releases cargo 1, 3 releases cargo 2, 4 releases cargo 3.
     drop_commands: [2, 3, 4]
     # 穿门 staging 起点：到达后先下降至 door_height。
-    door_start_xy: [0.0,0.0]
+    door_start_xy: [7.77,4.05]
     # 穿门后按顺序逐点导航，扁平化 map-frame XY：[x1,y1,x2,y2,...]。
     # 这些点作为连续 TEB via-point 引导，不会逐点停止；Nav2 最终目标是 landing_xy。
-    door_waypoints_xy:  [3.22,-0.21,7.24,-2.95]  #[3.95,0.54,6.28,-0.0254] #[3.15,0.096,5.62,-0.463]     # [7.67,-4.18]
+    door_waypoints_xy:  [7.62,2.08,7.63,-0.453,8.13,0.784] #[3.22,-0.21,7.24,-2.95]  #[3.95,0.54,6.28,-0.0254] #[3.15,0.096,5.62,-0.463]     # [7.67,-4.18]
     # 到达当前必经点该半径内时，切换 TEB 引导至下一个必经点。
     door_via_point_tolerance: 0.35
     teb_via_points_topic: /via_points
     # 旧版单点参数，仅在 door_waypoints_xy 为空时作为兼容回退。
-    door_end_xy: [6.28,-0.0254]   #[7.67,-4.18]
+    door_end_xy: [8.13,0.784] #[6.28,-0.0254]   #[7.67,-4.18]
     # 路线终点之后还会导航至该独立降落点，再请求 PX4 AUTO.LAND。
     # 必须填写安全、可降落的 map-frame [x,y]；空值会阻止任务启动。
-    landing_xy:  [7.24,-2.95] #   [6.28,-0.0254]
+    landing_xy:  [8.13,0.784] #   [6.28,-0.0254]
     # After reaching door_start_xy, position control lowers to this height;
     # the adapter then keeps the same height while Nav2 traverses center/end.
     door_height: 0.60
@@ -74,7 +78,7 @@ coverage_mission_node:
     pose_z_offset: 0.39
     align_tolerance: 0.12
     height_tolerance: 0.25
-    stable_pose_samples: 4
+    stable_pose_samples: 5
     actuator_topic: /electromagnet/set_state
     actuator_status_topic: /electromagnet/status
     # Real delivery is enabled, but mission takeoff/search stays blocked until

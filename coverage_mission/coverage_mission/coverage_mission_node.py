@@ -36,7 +36,8 @@ class CoverageMissionNode(Node):
     (WAIT_START, WAIT_ARM, SEARCHING, DROP_APPROACH, DROP_ALIGN,
      DROP_DESCEND, DROP_DWELL, DROP_ASCEND, DOOR_APPROACH, DOOR_LOWER,
      DOOR_TEB_SWITCH, DOOR_TRAVERSE, DOOR_DONE, LANDING, FINISHED,
-     TARGET_CONFIRM_HOLD, DOOR_LANDING_APPROACH, LANDING_ALIGN) = range(18)
+     TARGET_CONFIRM_HOLD, DOOR_LANDING_APPROACH, LANDING_ALIGN,
+     CLEAR_CARGO) = range(19)
 
     def __init__(self):
         """声明并读取配置，生成航线，建立 ROS 通信接口及任务初始状态。"""
@@ -68,6 +69,8 @@ class CoverageMissionNode(Node):
         self.declare_parameter('goal_timeout_sec', 180.0)
         self.declare_parameter('nav_retry_delay_sec', 1.0)
         self.declare_parameter('red_cross_hold_sec', 2.0)
+        self.declare_parameter('record_targets_during_search', False)
+        self.declare_parameter('deliver_red_cross', True)
         self.declare_parameter('max_deliveries', 3)
         self.declare_parameter('drop_offsets_xy', [-0.08, -0.08, -0.08, 0.08, 0.08, 0.08])
         self.declare_parameter('drop_commands', [2, 3, 4])
@@ -127,6 +130,9 @@ class CoverageMissionNode(Node):
         self.goal_timeout = float(get('goal_timeout_sec').value)
         self.nav_retry_delay = float(get('nav_retry_delay_sec').value)
         self.red_cross_hold = float(get('red_cross_hold_sec').value)
+        self.record_targets_during_search = bool(
+            get('record_targets_during_search').value)
+        self.deliver_red_cross = bool(get('deliver_red_cross').value)
         self.max_deliveries = int(get('max_deliveries').value)
         self.drop_offsets = [float(v) for v in list_parameter('drop_offsets_xy')]
         self.drop_commands = [int(v) for v in list_parameter('drop_commands')]
@@ -290,11 +296,14 @@ class CoverageMissionNode(Node):
         self.last_nav_wait_log = 0.0
         self.candidate_samples = []
         self.delivered_targets = []
+        self.recorded_targets = []
+        self.search_route_complete = False
         self.delivery_count = 0
         self.active_target = None
         self.drop_xy = None
         self.drop_started_at = None
         self.actuator_command_sent_at = None
+        self.clear_hold_target = None
         self.actuator_status = None
         self.actuator_status_received_at = None
         self.expected_ack_sequence = None
@@ -518,6 +527,9 @@ class CoverageMissionNode(Node):
 
     def _desired_actuator_state(self):
         """计算应维持的磁铁状态：初始吸附态，投递时用本次投递状态。"""
+        if self.state == self.CLEAR_CARGO:
+            # 最大公开状态（默认 4）表示释放最后一件并清空剩余货物。
+            return self.drop_commands[-1]
         if self.state == self.DROP_DWELL and self.delivery_count < len(self.drop_commands):
             return self.drop_commands[self.delivery_count]
         if self.delivery_count > 0:
@@ -547,7 +559,7 @@ class CoverageMissionNode(Node):
             (command, self.actuator_repeat_period))
 
     def _target_cb(self, msg):
-        """筛选有效地图系检测，连续多帧稳定后接受目标并开始投递。"""
+        """筛选有效地图系检测，连续多帧稳定后记录或开始投递。"""
         if self.state not in (self.SEARCHING, self.TARGET_CONFIRM_HOLD):
             return
         if msg.header.frame_id != self.frame_id:
@@ -565,28 +577,42 @@ class CoverageMissionNode(Node):
         valid = [item for item in valid
                  if not self._is_delivered_target(
                      item.ground_position.x, item.ground_position.y)]
+        valid = [item for item in valid
+                 if self._target_priority(item.class_id, item.class_name) is not None
+                 and (self.record_targets_during_search or self.deliver_red_cross
+                      or item.class_id != 0)]
         if not valid:
             self.candidate_samples.clear()
             self.pending_confirmed_target = None
             return
 
         red_crosses = [item for item in valid if item.class_id == 0]
+        # 同一帧出现多个类别时先确认权重最高的目标，而非仅比较置信度。
+        detection = max(
+            valid,
+            key=lambda item: (self._target_priority(item.class_id, item.class_name),
+                              item.confidence))
         min_x, max_x, min_y, max_y = self.search_bounds
         red_crosses = [item for item in red_crosses
                        if min_x <= item.ground_position.x <= max_x
                        and min_y <= item.ground_position.y <= max_y]
-        if (self.state == self.SEARCHING and red_crosses
+        if (not self.record_targets_during_search and self.deliver_red_cross
+                and self.state == self.SEARCHING and red_crosses
                 and self.delivery_count < self.max_deliveries):
-            detection = max(red_crosses, key=lambda item: item.confidence)
+            detection = max(
+                red_crosses,
+                key=lambda item: (self._target_priority(item.class_id, item.class_name),
+                                  item.confidence))
             self._begin_red_cross_hold()
         elif self.state == self.TARGET_CONFIRM_HOLD:
             if not red_crosses:
                 self.candidate_samples.clear()
                 self.pending_confirmed_target = None
                 return
-            detection = max(red_crosses, key=lambda item: item.confidence)
-        else:
-            detection = max(valid, key=lambda item: item.confidence)
+            detection = max(
+                red_crosses,
+                key=lambda item: (self._target_priority(item.class_id, item.class_name),
+                                  item.confidence))
 
         sample = (detection.class_id, detection.class_name,
                   detection.ground_position.x, detection.ground_position.y,
@@ -654,7 +680,7 @@ class CoverageMissionNode(Node):
         self._send_search_goal()
 
     def _accept_confirmed_target(self, target):
-        """检查区域、重复位置和剩余货物；计算投递偏置并进入接近阶段。"""
+        """检查区域与重复位置；按配置记录目标或立即进入投递阶段。"""
         mean_x, mean_y, mean_z, class_id, class_name, confidence = target
         min_x, max_x, min_y, max_y = self.search_bounds
         if not (min_x <= mean_x <= max_x and min_y <= mean_y <= max_y):
@@ -677,6 +703,12 @@ class CoverageMissionNode(Node):
             self.pending_confirmed_target = None
             return
 
+        if self.record_targets_during_search:
+            self._record_target(target)
+            self.candidate_samples.clear()
+            self.pending_confirmed_target = None
+            return
+
         self.active_target = (mean_x, mean_y, mean_z, class_id, class_name, confidence)
         offset_x = self.drop_offsets[2 * self.delivery_count]
         offset_y = self.drop_offsets[2 * self.delivery_count + 1]
@@ -695,8 +727,49 @@ class CoverageMissionNode(Node):
         self.state = self.DROP_APPROACH
         self._cancel_goal_then(self._send_drop_goal)
 
+    @staticmethod
+    def _target_priority(class_id, class_name=''):
+        """返回任务类别权重：红十字 > 装甲目标 > 桥 > 堡垒 > 帐篷。"""
+        name = str(class_name).strip().lower()
+        if class_id == 0 or '红十字' in name or 'red cross' in name:
+            return 5
+        if class_id in (3, 5) or any(token in name for token in
+                                     ('装甲', '坦克', '战车', 'armored', 'tank')):
+            return 4
+        if class_id == 6 or '桥' in name or 'bridge' in name:
+            return 3
+        if class_id == 4 or any(token in name for token in
+                                ('堡', '地堡', 'bunker', 'fort')):
+            return 2
+        if class_id == 2 or any(token in name for token in ('帐', '营帐', 'tent')):
+            return 1
+        return None
+
+    def _record_target(self, target):
+        """记录一个稳定目标；同位置重复观测只保留权重更高的类别。"""
+        x, y = target[0:2]
+        for index, previous in enumerate(self.recorded_targets):
+            if math.hypot(x - previous[0], y - previous[1]) <= \
+                    self.delivered_target_duplicate_radius:
+                old_priority = self._target_priority(previous[3], previous[4]) or 0
+                new_priority = self._target_priority(target[3], target[4]) or 0
+                if new_priority > old_priority:
+                    self.recorded_targets[index] = target
+                self.get_logger().debug(
+                    '目标位置已记录，忽略重复观测 map=(%.3f, %.3f)' % (x, y))
+                return
+        self.recorded_targets.append(target)
+        self.get_logger().warning(
+            '记录搜索目标 #%d：%s id=%d priority=%d map=(%.3f, %.3f)，继续当前航线。' %
+            (len(self.recorded_targets), target[4], target[3],
+             self._target_priority(target[3], target[4]), x, y))
+
     def _resume_search_after_delivery(self):
         """投递后恢复被靶标确认打断的搜索航点，而不是跳过它。"""
+        if self.record_targets_during_search and self.search_route_complete:
+            self.paused_search_goal = None
+            self._dispatch_next_recorded_target_or_clear()
+            return
         if self.paused_search_goal and self.paused_search_goal[0] == 'search':
             # 搜索航点在发送时 next_index 已前移；将其退回暂停前的航点。
             self.next_index = max(0, int(self.paused_search_goal[1]) - 1)
@@ -710,6 +783,73 @@ class CoverageMissionNode(Node):
             'Resuming coverage for delivery %d/%d' %
             (self.delivery_count + 1, self.max_deliveries))
         self._send_search_goal()
+
+    def _dispatch_next_recorded_target_or_clear(self):
+        """航线结束后按权重投递记录目标；无可投目标则原地清货后穿门。"""
+        if self.delivery_count >= self.max_deliveries:
+            self._begin_door_leg()
+            return
+
+        eligible = [target for target in self.recorded_targets
+                    if (self.deliver_red_cross or target[3] != 0)
+                    and self._target_priority(target[3], target[4]) is not None]
+        if eligible:
+            target = max(
+                eligible,
+                key=lambda item: (self._target_priority(item[3], item[4]), item[5]))
+            self.recorded_targets.remove(target)
+            self.active_target = target
+            offset_x = self.drop_offsets[2 * self.delivery_count]
+            offset_y = self.drop_offsets[2 * self.delivery_count + 1]
+            self.drop_xy = (target[0] + offset_x, target[1] + offset_y)
+            self.state = self.DROP_APPROACH
+            self.nav_state_pub.publish(Bool(data=True))
+            self.get_logger().warning(
+                '搜索航线已完成；按优先级投递记录目标 %s id=%d priority=%d，'
+                'map=(%.3f, %.3f)，投递序号=%d/%d。' %
+                (target[4], target[3], self._target_priority(target[3], target[4]),
+                 target[0], target[1], self.delivery_count + 1, self.max_deliveries))
+            self._send_drop_goal()
+            return
+
+        if self.deliver_red_cross is False:
+            skipped_red_crosses = sum(1 for item in self.recorded_targets if item[3] == 0)
+            if skipped_red_crosses:
+                self.get_logger().warning(
+                    '红十字投递开关关闭；跳过 %d 个已记录红十字。' %
+                    skipped_red_crosses)
+        self._begin_clear_remaining_cargo()
+
+    def _begin_clear_remaining_cargo(self):
+        """在当前位置保持定点，命令电磁铁释放所有剩余货物，再开始穿门。"""
+        pose_fresh = (self.current_pose_time is not None
+                      and time.monotonic() - self.current_pose_time < self.pose_stale_timeout
+                      and self.current_pose is not None
+                      and self.current_altitude is not None)
+        if not pose_fresh:
+            self._begin_landing('cannot safely clear remaining cargo: pose is stale')
+            return
+        pose = self.current_pose.transform.translation
+        self.clear_hold_target = (pose.x, pose.y, self.current_altitude)
+        self.actuator_command_sent_at = time.monotonic()
+        status = self.actuator_status or {}
+        self.expected_ack_sequence = int(status.get('ack_sequence', 0)) + 1
+        self.state = self.CLEAR_CARGO
+        self.nav_state_pub.publish(Bool(data=False))
+        self.passing_door_pub.publish(Bool(data=False))
+        if self.actuator_output_enabled and self.require_actuator_status \
+                and not self._actuator_ready():
+            self._begin_landing('electromagnet not ready to clear remaining cargo')
+            return
+        if self.actuator_output_enabled:
+            self.actuator_pub.publish(Int32(data=self.drop_commands[-1]))
+            self.get_logger().warning(
+                '搜索路线与记录目标已处理完；当前位置发送电磁铁全释放 state=%d，等待 ACK。' %
+                self.drop_commands[-1])
+        else:
+            self.get_logger().warning(
+                '搜索路线与记录目标已处理完；当前位置仅打印全释放信号 state=%d（未驱动电磁铁）。' %
+                self.drop_commands[-1])
 
     def _tick(self):
         """100 ms 状态机主循环：维持输出、检查安全条件并推进任务阶段。"""
@@ -761,7 +901,7 @@ class CoverageMissionNode(Node):
                          self.DOOR_APPROACH, self.DOOR_LOWER, self.DOOR_TRAVERSE,
                          self.DOOR_TEB_SWITCH, self.DOOR_LANDING_APPROACH,
                          self.DOOR_DONE, self.LANDING_ALIGN,
-                         self.TARGET_CONFIRM_HOLD)
+                         self.TARGET_CONFIRM_HOLD, self.CLEAR_CARGO)
         if self.state in active_states:
             if not self.armed or (self.require_offboard and not self.offboard):
                 self._begin_landing(
@@ -873,6 +1013,33 @@ class CoverageMissionNode(Node):
                 # so the adapter's 1 s target watchdog stays satisfied.
                 self._publish_position_target(
                     self.door_end[0], self.door_end[1], self.door_height)
+                return
+            if self.state == self.CLEAR_CARGO:
+                self.nav_state_pub.publish(Bool(data=False))
+                self._publish_position_target(*self.clear_hold_target)
+                command = self.drop_commands[-1]
+                elapsed = time.monotonic() - self.actuator_command_sent_at
+                if self.actuator_output_enabled and self.require_actuator_status:
+                    if not self._actuator_ready():
+                        self._begin_landing(
+                            'electromagnet disconnected, stale, or dry-run while clearing cargo')
+                        return
+                    status = self.actuator_status
+                    acknowledged = (
+                        status.get('state') == command
+                        and status.get('last_sent_command') == command
+                        and int(status.get('ack_sequence', 0)) >= self.expected_ack_sequence
+                        and status.get('pending_command') is None)
+                    if not acknowledged and elapsed > self.actuator_ack_timeout:
+                        self._begin_landing('clear-cargo command was not acknowledged')
+                        return
+                    if not acknowledged:
+                        return
+                if elapsed >= self.drop_dwell:
+                    self.get_logger().warning(
+                        '当前位置清空货物完成；开始穿门阶段。')
+                    self.clear_hold_target = None
+                    self._begin_door_leg()
                 return
             if self.state == self.LANDING_ALIGN:
                 self.nav_state_pub.publish(Bool(data=False))
@@ -1079,6 +1246,9 @@ class CoverageMissionNode(Node):
             else:
                 message = '任务阶段：投递处理，投递=%d/%d' % (
                     self.delivery_count + 1, self.max_deliveries)
+        elif self.state == self.CLEAR_CARGO:
+            message = ('任务阶段：当前位置清空剩余货物，电磁铁状态=%d，等待释放确认' %
+                       self.drop_commands[-1])
         elif self.state == self.DOOR_APPROACH:
             message = ('任务阶段：前往穿门起点，坐标=(%.2f, %.2f)，'
                        '已投递=%d/%d' %
@@ -1137,7 +1307,14 @@ class CoverageMissionNode(Node):
     def _send_search_goal(self):
         """发送当前蛇形搜索航点；航线耗尽时转去穿门起点。"""
         if self.next_index >= len(self.route):
-            self._begin_door_leg()
+            if self.record_targets_during_search:
+                if not self.search_route_complete:
+                    self.search_route_complete = True
+                    self.get_logger().warning(
+                        '搜索航线已完成；开始按目标优先级处理记录的靶标。')
+                self._dispatch_next_recorded_target_or_clear()
+            else:
+                self._begin_door_leg()
             return
         x, y, _, yaw = self.route[self.next_index]
         self._send_nav_goal('search', x, y, yaw)
